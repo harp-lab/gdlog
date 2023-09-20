@@ -1,0 +1,39 @@
+
+.decl edge(from:number, to:number)
+.input edge(IO=file, filename="data/data_39994.txt", deliminator="\t")
+
+
+
+.decl path(from:number, to:number)
+
+path(from, to) :- edge(from, to).
+path(from, to) :- edge(from, mid), path(mid, to).
+
+.printsize path
+
+// .decl path1_join(from:number, to:number)
+// .output path1_join
+// path1_join(from, to) :- edge(from, mid), edge(mid, to).
+// .printsize path1_join
+
+// .decl path1(from:number, to:number)
+// .output path1
+// path1(from, to) :- edge(from, to).
+// path1(from, to) :- edge(from, mid), edge(mid, to).
+// .printsize path1
+
+// .decl path2(from:number, to:number)
+// // path2(from, to) :- path1(from, to).
+// path2(from, to) :- edge(from, mid), path1(mid, to).
+// .printsize path2
+// .output path2
+
+// .decl path3(from:number, to:number)
+// path3(from, to) :- path2(from, to).
+// path3(from, to) :- edge(from, mid), path2(mid, to).
+// .printsize path3
+
+// .decl path3_join(from:number, to:number)
+// path3_join(from, to) :- edge(from, mid), path2(mid, to).
+// .printsize path3_join
+// .output path3_join
