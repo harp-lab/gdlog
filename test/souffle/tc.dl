@@ -1,6 +1,6 @@
 
 .decl edge(from:number, to:number)
-.input edge(IO=file, filename="data/data_39994.txt", deliminator="\t")
+.input edge(IO=file, filename="../../data/data_3.txt", deliminator="\t")
 
 
 

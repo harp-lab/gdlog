@@ -1,6 +1,7 @@
 
 #include "../include/exception.cuh"
 #include "../include/relation.cuh"
+#include "../include/print.cuh"
 #include <thrust/sort.h>
 #include <thrust/unique.h>
 
@@ -147,8 +148,7 @@ __global__ void init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
 __global__ void get_join_result_size(GHashRelContainer *inner_table,
                                      GHashRelContainer *outer_table,
                                      int join_column_counts,
-                                     u64 *join_result_size, int iter,
-                                     u64 *debug) {
+                                     u64 *join_result_size) {
     u64 index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= outer_table->tuple_counts)
         return;
@@ -230,7 +230,7 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
 __global__ void get_join_result(GHashRelContainer *inner_table,
                                 GHashRelContainer *outer_table,
                                 int join_column_counts,
-                                int *output_reorder_array, int output_arity,
+                                tuple_generator_hook tp_gen, int output_arity,
                                 column_type *output_raw_data,
                                 u64 *res_count_array, u64 *res_offset,
                                 JoinDirection direction) {
@@ -244,7 +244,6 @@ __global__ void get_join_result(GHashRelContainer *inner_table,
         if (res_count_array[i] == 0) {
             continue;
         }
-        u64 tuple_raw_pos = i * ((u64)outer_table->arity);
         tuple_type outer_tuple = outer_table->tuples[i];
 
         // column_type* outer_indexed_cols;
@@ -288,12 +287,13 @@ __global__ void get_join_result(GHashRelContainer *inner_table,
                     (res_offset[i] + current_new_tuple_cnt) * output_arity;
 
                 for (int j = 0; j < output_arity; j++) {
-                    if (output_reorder_array[j] < inner_table->arity) {
-                        new_tuple[j] = inner_tuple[output_reorder_array[j]];
-                    } else {
-                        new_tuple[j] = outer_tuple[output_reorder_array[j] -
-                                                   inner_table->arity];
-                    }
+                    (*tp_gen)(inner_tuple, outer_tuple, new_tuple);
+                    // if (output_reorder_array[j] < inner_table->arity) {
+                    //     new_tuple[j] = inner_tuple[output_reorder_array[j]];
+                    // } else {
+                    //     new_tuple[j] = outer_tuple[output_reorder_array[j] -
+                    //                                inner_table->arity];
+                    // }
                 }
                 current_new_tuple_cnt++;
                 if (current_new_tuple_cnt > res_count_array[i]) {
@@ -334,11 +334,12 @@ __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
     }
 }
 
-void load_relation(GHashRelContainer *target, int arity, column_type *data,
-                   u64 data_row_size, u64 index_column_size,
-                   float index_map_load_factor, int grid_size, int block_size,
-                   bool gpu_data_flag, bool sorted_flag, bool build_index_flag,
-                   bool tuples_array_flag) {
+void load_relation_container(GHashRelContainer *target, int arity,
+                             column_type *data, u64 data_row_size,
+                             u64 index_column_size, float index_map_load_factor,
+                             int grid_size, int block_size, bool gpu_data_flag,
+                             bool sorted_flag, bool build_index_flag,
+                             bool tuples_array_flag) {
     target->arity = arity;
     target->tuple_counts = data_row_size;
     target->data_raw_row_size = data_row_size;
@@ -438,7 +439,7 @@ void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src) {
                cudaMemcpyDeviceToDevice);
 }
 
-void free_relation(GHashRelContainer *target) {
+void free_relation_container(GHashRelContainer *target) {
     target->tuple_counts = 0;
     if (target->index_map != nullptr)
         cudaFree(target->index_map);
@@ -446,4 +447,19 @@ void free_relation(GHashRelContainer *target) {
         cudaFree(target->tuples);
     if (target->data_raw != nullptr)
         cudaFree(target->data_raw);
+}
+
+void load_relation(Relation *target, std::string name, int arity,
+                   column_type *data, u64 data_row_size, u64 index_column_size,
+                   int grid_size, int block_size) {
+
+    target->name = name;
+    target->arity = arity;
+    target->index_column_size = index_column_size;
+    target->full = new GHashRelContainer(arity, index_column_size);
+    target->delta = new GHashRelContainer(arity, index_column_size);
+    target->newt = new GHashRelContainer(arity, index_column_size);
+
+    load_relation_container(target->full, arity, data, data_row_size,
+                            index_column_size, 0.8, grid_size, block_size);
 }

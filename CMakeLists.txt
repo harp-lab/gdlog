@@ -7,13 +7,16 @@ set(test_dir "${PROJECT_SOURCE_DIR}/test")
 
 file(GLOB source_file_gpu_ra 
     "${gpu_ra_include}/exception.cuh"
+    "${gpu_ra_include}/dynamic_dispatch.h"
     "${gpu_ra_include}/print.cuh"
     "${gpu_ra_include}/relation.cuh"
     "${gpu_ra_include}/relational_algebra.cuh"
     "${gpu_ra_include}/timer.cuh"
     "${gpu_ra_include}/tuple.cuh"
+    "${gpu_ra_include}/lie.cuh"
     "${gpu_ra_src}/print.cu"
     "${gpu_ra_src}/relation.cu"
+    "${gpu_ra_src}/lie.cu"
     "${gpu_ra_src}/relational_algebra.cu"
 )
 

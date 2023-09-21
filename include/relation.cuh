@@ -1,5 +1,9 @@
 #pragma once
 #include "tuple.cuh"
+#include <string>
+#include <vector>
+
+enum RelationVersion { DELTA, FULL, NEWT };
 
 /**
  * @brief A hash table entry
@@ -32,7 +36,7 @@ struct MEntity {
 struct GHashRelContainer {
     // open addressing hashmap for indexing
     MEntity *index_map = nullptr;
-    u64 index_map_size;
+    u64 index_map_size = 0;
     float index_map_load_factor;
 
     // index prefix length
@@ -45,11 +49,14 @@ struct GHashRelContainer {
     // flatten tuple data
     column_type *data_raw = nullptr;
     // number of tuples
-    u64 tuple_counts;
+    u64 tuple_counts = 0;
     // actual tuple rows in flatten data, this maybe different from
     // tuple_counts when deduplicated
-    u64 data_raw_row_size;
+    u64 data_raw_row_size = 0;
     int arity;
+
+    GHashRelContainer(int arity, int indexed_column_size)
+        : arity(arity), index_column_size(indexed_column_size){};
 };
 
 enum JoinDirection { LEFT, RIGHT };
@@ -127,8 +134,7 @@ __global__ void init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
 __global__ void get_join_result_size(GHashRelContainer *inner_table,
                                      GHashRelContainer *outer_table,
                                      int join_column_counts,
-                                     u64 *join_result_size, int iter,
-                                     u64 *debug = nullptr);
+                                     u64 *join_result_size);
 
 /**
  * @brief compute the join result
@@ -144,7 +150,7 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
  */
 __global__ void
 get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
-                int join_column_counts, int *output_reorder_array,
+                int join_column_counts, tuple_generator_hook tp_gen,
                 int output_arity, column_type *output_raw_data,
                 u64 *res_count_array, u64 *res_offset, JoinDirection direction);
 
@@ -170,11 +176,11 @@ __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
  * @param gpu_data_flag if data is a GPU memory address directly assign to
  * target's data_raw
  */
-void load_relation(GHashRelContainer *target, int arity, column_type *data,
-                   u64 data_row_size, u64 index_column_size,
-                   float index_map_load_factor, int grid_size, int block_size,
-                   bool gpu_data_flag = false, bool sorted_flag = false,
-                   bool build_index_flag = true, bool tuples_array_flag = true);
+void load_relation_container(
+    GHashRelContainer *target, int arity, column_type *data, u64 data_row_size,
+    u64 index_column_size, float index_map_load_factor, int grid_size,
+    int block_size, bool gpu_data_flag = false, bool sorted_flag = false,
+    bool build_index_flag = true, bool tuples_array_flag = true);
 
 /**
  * @brief copy a relation into an **empty** relation
@@ -189,4 +195,27 @@ void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src);
  *
  * @param target
  */
-void free_relation(GHashRelContainer *target);
+void free_relation_container(GHashRelContainer *target);
+
+/**
+ * @brief actual relation class used in semi-naive eval
+ *
+ */
+struct Relation {
+    int arity;
+    int index_column_size;
+    std::string name;
+
+    GHashRelContainer *delta;
+    GHashRelContainer *newt;
+    GHashRelContainer *full;
+
+    // a buffer for tuple pointer in full
+    u64 current_full_size = 0;
+    tuple_type *tuple_full;
+    std::vector<GHashRelContainer *> buffered_delta_vectors;
+};
+
+void load_relation(Relation *target, std::string name, int arity,
+                   column_type *data, u64 data_row_size, u64 index_column_size,
+                   int grid_size, int block_size);
