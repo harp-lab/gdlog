@@ -158,6 +158,12 @@ __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
                                         column_type *raw, u64 tuple_counts,
                                         int arity);
 
+__global__ void get_copy_result(tuple_type *src_tuples,
+                                column_type *dest_raw_data,
+                                int output_arity,
+                                u64 tuple_counts,
+                                tuple_copy_hook tp_gen);
+
 //////////////////////////////////////////////////////
 // CPU functions
 

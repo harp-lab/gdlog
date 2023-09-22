@@ -1,7 +1,7 @@
 
 #include "../include/exception.cuh"
-#include "../include/relation.cuh"
 #include "../include/print.cuh"
+#include "../include/relation.cuh"
 #include <thrust/sort.h>
 #include <thrust/unique.h>
 
@@ -334,6 +334,22 @@ __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
     }
 }
 
+__global__ void get_copy_result(tuple_type *src_tuples,
+                                column_type *dest_raw_data,
+                                int output_arity,
+                                u64 tuple_counts,
+                                tuple_copy_hook tp_gen) {
+    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (index >= tuple_counts)
+        return;
+
+    int stride = blockDim.x * gridDim.x;
+    for (u64 i = index; i < tuple_counts; i += stride) {
+        tuple_type dest_tp = dest_raw_data + output_arity * i;
+        (*tp_gen)(src_tuples[i], dest_tp);
+    }
+}
+
 void load_relation_container(GHashRelContainer *target, int arity,
                              column_type *data, u64 data_row_size,
                              u64 index_column_size, float index_map_load_factor,
@@ -441,12 +457,18 @@ void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src) {
 
 void free_relation_container(GHashRelContainer *target) {
     target->tuple_counts = 0;
-    if (target->index_map != nullptr)
+    if (target->index_map != nullptr) {
         cudaFree(target->index_map);
-    if (target->tuples != nullptr)
+        target->index_map = nullptr;
+    }
+    if (target->tuples != nullptr) {
         cudaFree(target->tuples);
-    if (target->data_raw != nullptr)
+        target->tuples = nullptr;
+    }
+    if (target->data_raw != nullptr) {
         cudaFree(target->data_raw);
+        target->data_raw = nullptr;
+    }
 }
 
 void load_relation(Relation *target, std::string name, int arity,

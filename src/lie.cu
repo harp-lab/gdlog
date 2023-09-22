@@ -59,7 +59,13 @@ void LIE::fixpoint_loop() {
                                             op();
                                         },
                                         [](RelationalCopy &op) {
-                                            // to be implemented
+                                            if (op.src_ver == FULL) {
+                                                if (!op.copied) {
+                                                    op();
+                                                }
+                                            } else {
+                                                op();
+                                            }
                                         }},
                        ra_op);
             timer.stop_timer();

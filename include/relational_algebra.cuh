@@ -35,27 +35,25 @@ struct RelationalJoin {
 };
 
 struct RelationalCopy {
-    GHashRelContainer *src;
-    GHashRelContainer *dest;
+    Relation *src_rel;
+    RelationVersion src_ver;
+    Relation *dest_rel;
+    tuple_copy_hook tuple_generator;
 
-    tuple_generator_hook tuple_generator;
+    int grid_size;
+    int block_size;
+    bool copied = false;
+
+    RelationalCopy(Relation *src, RelationVersion src_ver, Relation *dest,
+                   tuple_copy_hook tuple_generator, int grid_size,
+                   int block_size)
+        : src_rel(src), src_ver(src_ver), dest_rel(dest),
+          tuple_generator(tuple_generator), grid_size(grid_size),
+          block_size(block_size) {}
+
+    void operator()();
 };
 
 using ra_op = std::variant<RelationalJoin, RelationalCopy>;
 
 enum RAtypes { JOIN, COPY };
-// struct RelationalCopy {
-
-// };
-
-// /**
-//  * @brief binary join, close to local_join in slog's join RA operator
-//  *
-//  * @param inner
-//  * @param outer
-//  * @param block_size
-//  */
-// void binary_join(GHashRelContainer *inner, GHashRelContainer *outer,
-//                  GHashRelContainer *output_newt, tuple_generator_hook tp_gen,
-//                  int reorder_array_size, JoinDirection direction, int
-//                  grid_size, int block_size, int iter, float *detail_time);

@@ -21,6 +21,8 @@ using t_data_internal = u64 *;
 
 
 typedef void (*tuple_generator_hook) (tuple_type, tuple_type, tuple_type);
+typedef void (*tuple_copy_hook) (tuple_type, tuple_type);
+
 // struct tuple_generator_hook {
 //     __host__ __device__ 
 //     void operator()(tuple_type inner, tuple_type outer, tuple_type newt) {};

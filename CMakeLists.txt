@@ -17,7 +17,8 @@ file(GLOB source_file_gpu_ra
     "${gpu_ra_src}/print.cu"
     "${gpu_ra_src}/relation.cu"
     "${gpu_ra_src}/lie.cu"
-    "${gpu_ra_src}/relational_algebra.cu"
+    "${gpu_ra_src}/copy.cu"
+    "${gpu_ra_src}/join.cu"
 )
 
 file(GLOB source_file_tc
