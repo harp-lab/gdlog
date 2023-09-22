@@ -9,12 +9,9 @@
 
 #include <variant>
 
+void LIE::add_ra(ra_op op) { ra_ops.push_back(op); }
 
-void LIE::add_ra(ra_op op) {
-    ra_ops.push_back(op);
-}
-
-void LIE::add_relations(Relation* rel, bool static_flag) {
+void LIE::add_relations(Relation *rel, bool static_flag) {
     if (static_flag) {
         static_relations.push_back(rel);
     } else {
@@ -77,12 +74,13 @@ void LIE::fixpoint_loop() {
         bool fixpoint_flag = true;
         for (Relation *rel : update_relations) {
 
-            // if (rel->newt->tuple_counts != 0) {  
+            // if (rel->newt->tuple_counts != 0) {
             //     fixpoint_flag = false;
             // }
             timer.start_timer();
             if (iteration_counter != 0 && rel->delta->tuple_counts != 0) {
-                // std::cout << rel->name << " merging ... " << rel->newt->tuple_counts << std::endl; 
+                // std::cout << rel->name << " merging ... " <<
+                // rel->newt->tuple_counts << std::endl;
                 tuple_type *tuple_full_buf;
                 checkCuda(cudaMalloc(
                     (void **)&tuple_full_buf,
@@ -132,7 +130,8 @@ void LIE::fixpoint_loop() {
                 rel->tuple_full + rel->current_full_size,
                 deduplicated_newt_tuples,
                 tuple_indexed_less(rel->full->index_column_size,
-                                   rel->full->arity));
+                                   rel->full->arity -
+                                       rel->dependent_column_size));
             checkCuda(cudaDeviceSynchronize());
             u64 deduplicate_size = deuplicated_end - deduplicated_newt_tuples;
 
@@ -160,6 +159,7 @@ void LIE::fixpoint_loop() {
             load_relation_container(rel->delta, rel->full->arity,
                                     deduplicated_raw, deduplicate_size,
                                     rel->full->index_column_size,
+                                    rel->full->dependent_column_size,
                                     rel->full->index_map_load_factor, grid_size,
                                     block_size, true, true, true);
             timer.stop_timer();
@@ -173,6 +173,9 @@ void LIE::fixpoint_loop() {
                       << " full counts " << rel->current_full_size << std::endl;
             iteration_counter++;
         }
+        // if (iteration_counter >= 3) {
+        //     break;
+        // }
 
         if (fixpoint_flag) {
             break;
@@ -193,11 +196,11 @@ void LIE::fixpoint_loop() {
             rel->full->arity);
         checkCuda(cudaDeviceSynchronize());
         // cudaFree(tuple_merge_buffer);
-        load_relation_container(rel->full, rel->full->arity, new_full_raw_data,
-                                rel->current_full_size,
-                                rel->full->index_column_size,
-                                rel->full->index_map_load_factor, grid_size,
-                                block_size, true, true);
+        load_relation_container(
+            rel->full, rel->full->arity, new_full_raw_data,
+            rel->current_full_size, rel->full->index_column_size,
+            rel->full->dependent_column_size, rel->full->index_map_load_factor,
+            grid_size, block_size, true, true);
         checkCuda(cudaDeviceSynchronize());
         std::cout << "Finished! path has " << rel->full->tuple_counts
                   << std::endl;

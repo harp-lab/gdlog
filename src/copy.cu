@@ -29,14 +29,16 @@ void RelationalCopy::operator()() {
     if (dest->tuples == nullptr && dest->tuple_counts == 0) {
         free_relation_container(dest);
         load_relation_container(dest, dest->arity, copied_raw_data,
-                                src->tuple_counts, src->index_column_size, 0.8,
-                                grid_size, block_size, true, false, false);
+                                src->tuple_counts, src->index_column_size,
+                                dest->dependent_column_size, 0.8, grid_size,
+                                block_size, true, false, false);
     } else {
-        GHashRelContainer *tmp =
-            new GHashRelContainer(dest->arity, dest->index_column_size);
+        GHashRelContainer *tmp = new GHashRelContainer(
+            dest->arity, dest->index_column_size, dest->dependent_column_size);
         load_relation_container(tmp, dest->arity, copied_raw_data,
-                                src->tuple_counts, src->index_column_size, 0.8,
-                                grid_size, block_size, true, false, false);
+                                src->tuple_counts, src->index_column_size,
+                                dest->dependent_column_size, 0.8, grid_size,
+                                block_size, true, false, false);
         // merge to newt
         GHashRelContainer *old_newt = dest;
         tuple_type *tp_buffer;
@@ -47,7 +49,8 @@ void RelationalCopy::operator()() {
             thrust::device, old_newt->tuples,
             old_newt->tuples + old_newt->tuple_counts, tmp->tuples,
             tmp->tuples + tmp->tuple_counts, tp_buffer,
-            tuple_indexed_less(dest->index_column_size, output_arity));
+            tuple_indexed_less(dest->index_column_size,
+                               output_arity - dest_rel->dependent_column_size));
         checkCuda(cudaDeviceSynchronize());
         cudaFree(tmp->tuples);
         cudaFree(old_newt->tuples);
@@ -67,7 +70,8 @@ void RelationalCopy::operator()() {
         free_relation_container(tmp);
         load_relation_container(dest, output_arity, new_newt_raw,
                                 new_newt_counts, dest->index_column_size,
-                                0.8, grid_size, block_size);
+                                dest->dependent_column_size, 0.8, grid_size,
+                                block_size);
         // delete tmp;
     }
 }

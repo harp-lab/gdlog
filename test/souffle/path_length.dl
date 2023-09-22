@@ -1,0 +1,12 @@
+
+.decl edge(from:number, to:number)
+.input edge(IO=file, filename="../../data/data_3.txt", deliminator="\t")
+
+
+.decl path(from:number, to:number, l: number) choice-domain (from, to)
+.output path
+
+path(from, to, 1) :- edge(from, to).
+path(from, to, l+1) :- edge(from, mid), path(mid, to, l).
+
+.printsize path

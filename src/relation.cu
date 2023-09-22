@@ -335,10 +335,8 @@ __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
 }
 
 __global__ void get_copy_result(tuple_type *src_tuples,
-                                column_type *dest_raw_data,
-                                int output_arity,
-                                u64 tuple_counts,
-                                tuple_copy_hook tp_gen) {
+                                column_type *dest_raw_data, int output_arity,
+                                u64 tuple_counts, tuple_copy_hook tp_gen) {
     int index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= tuple_counts)
         return;
@@ -352,8 +350,9 @@ __global__ void get_copy_result(tuple_type *src_tuples,
 
 void load_relation_container(GHashRelContainer *target, int arity,
                              column_type *data, u64 data_row_size,
-                             u64 index_column_size, float index_map_load_factor,
-                             int grid_size, int block_size, bool gpu_data_flag,
+                             u64 index_column_size, int dependent_column_size,
+                             float index_map_load_factor, int grid_size,
+                             int block_size, bool gpu_data_flag,
                              bool sorted_flag, bool build_index_flag,
                              bool tuples_array_flag) {
     target->arity = arity;
@@ -361,6 +360,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
     target->data_raw_row_size = data_row_size;
     target->index_map_load_factor = index_map_load_factor;
     target->index_column_size = index_column_size;
+    target->dependent_column_size = dependent_column_size;
     // load index selection into gpu
     // u64 index_columns_mem_size = index_column_size * sizeof(u64);
     // checkCuda(cudaMalloc((void**) &(target->index_columns),
@@ -390,7 +390,8 @@ void load_relation_container(GHashRelContainer *target, int arity,
     if (!sorted_flag) {
         thrust::sort(thrust::device, target->tuples,
                      target->tuples + data_row_size,
-                     tuple_indexed_less(index_column_size, arity));
+                     tuple_indexed_less(index_column_size,
+                                        arity));
         // print_tuple_rows(target, "after sort");
 
         // deduplication here?
@@ -426,7 +427,8 @@ void load_relation_container(GHashRelContainer *target, int arity,
         // calculate hash
         calculate_index_hash<<<grid_size, block_size>>>(
             target_device,
-            tuple_indexed_less(target->index_column_size, target->arity));
+            tuple_indexed_less(target->index_column_size,
+                               target->arity));
         cudaFree(target_device);
     }
 }
@@ -473,15 +475,20 @@ void free_relation_container(GHashRelContainer *target) {
 
 void load_relation(Relation *target, std::string name, int arity,
                    column_type *data, u64 data_row_size, u64 index_column_size,
-                   int grid_size, int block_size) {
+                   int dependent_column_size, int grid_size, int block_size) {
 
     target->name = name;
     target->arity = arity;
     target->index_column_size = index_column_size;
-    target->full = new GHashRelContainer(arity, index_column_size);
-    target->delta = new GHashRelContainer(arity, index_column_size);
-    target->newt = new GHashRelContainer(arity, index_column_size);
+    target->dependent_column_size = dependent_column_size;
+    target->full =
+        new GHashRelContainer(arity, index_column_size, dependent_column_size);
+    target->delta =
+        new GHashRelContainer(arity, index_column_size, dependent_column_size);
+    target->newt =
+        new GHashRelContainer(arity, index_column_size, dependent_column_size);
 
     load_relation_container(target->full, arity, data, data_row_size,
-                            index_column_size, 0.8, grid_size, block_size);
+                            index_column_size, dependent_column_size, 0.8,
+                            grid_size, block_size);
 }

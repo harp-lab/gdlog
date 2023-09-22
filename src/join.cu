@@ -92,18 +92,20 @@ void RelationalJoin::operator()() {
         output_rel->newt->tuple_counts == 0) {
         load_relation_container(output_rel->newt, output_arity,
                                 join_res_raw_data, total_result_rows,
-                                output_rel->index_column_size, 0.8, grid_size,
-                                block_size, true, false, false);
+                                output_rel->index_column_size,
+                                output_rel->dependent_column_size, 0.8,
+                                grid_size, block_size, true, false, false);
     } else {
         std::cout << "wwwwwwwwwww " << std::endl;
         // data in current newt, merge
         GHashRelContainer *newt_tmp = new GHashRelContainer(
-            output_rel->arity, output_rel->index_column_size);
+            output_rel->arity, output_rel->index_column_size,
+            output_rel->dependent_column_size);
         GHashRelContainer *old_newt = output_rel->newt;
-        load_relation_container(newt_tmp, output_arity, join_res_raw_data,
-                                total_result_rows,
-                                output_rel->index_column_size, 0.8, grid_size,
-                                block_size, true, false, false);
+        load_relation_container(
+            newt_tmp, output_arity, join_res_raw_data, total_result_rows,
+            output_rel->index_column_size, output_rel->dependent_column_size,
+            0.8, grid_size, block_size, true, false, false);
         checkCuda(cudaDeviceSynchronize());
         tuple_type *tp_buffer;
         checkCuda(cudaMalloc((void **)&tp_buffer,
@@ -134,7 +136,8 @@ void RelationalJoin::operator()() {
         free_relation_container(newt_tmp);
         load_relation_container(output_rel->newt, output_arity, new_newt_raw,
                                 new_newt_counts, output_rel->index_column_size,
-                                0.8, grid_size, block_size, true, true, false);
+                                output_rel->dependent_column_size, 0.8,
+                                grid_size, block_size, true, true, false);
         // delete newt_tmp;
     }
 

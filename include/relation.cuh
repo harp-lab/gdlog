@@ -44,6 +44,9 @@ struct GHashRelContainer {
     // u64 *index_columns;
     u64 index_column_size;
 
+    // dependent postfix column always at the end of tuple
+    int dependent_column_size = 0;
+
     // the pointer to flatten tuple, all tuple pointer here need to be sorted
     tuple_type *tuples = nullptr;
     // flatten tuple data
@@ -55,8 +58,10 @@ struct GHashRelContainer {
     u64 data_raw_row_size = 0;
     int arity;
 
-    GHashRelContainer(int arity, int indexed_column_size)
-        : arity(arity), index_column_size(indexed_column_size){};
+    GHashRelContainer(int arity, int indexed_column_size,
+                      int dependent_column_size)
+        : arity(arity), index_column_size(indexed_column_size),
+          dependent_column_size(dependent_column_size){};
 };
 
 enum JoinDirection { LEFT, RIGHT };
@@ -159,10 +164,8 @@ __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
                                         int arity);
 
 __global__ void get_copy_result(tuple_type *src_tuples,
-                                column_type *dest_raw_data,
-                                int output_arity,
-                                u64 tuple_counts,
-                                tuple_copy_hook tp_gen);
+                                column_type *dest_raw_data, int output_arity,
+                                u64 tuple_counts, tuple_copy_hook tp_gen);
 
 //////////////////////////////////////////////////////
 // CPU functions
@@ -182,11 +185,14 @@ __global__ void get_copy_result(tuple_type *src_tuples,
  * @param gpu_data_flag if data is a GPU memory address directly assign to
  * target's data_raw
  */
-void load_relation_container(
-    GHashRelContainer *target, int arity, column_type *data, u64 data_row_size,
-    u64 index_column_size, float index_map_load_factor, int grid_size,
-    int block_size, bool gpu_data_flag = false, bool sorted_flag = false,
-    bool build_index_flag = true, bool tuples_array_flag = true);
+void load_relation_container(GHashRelContainer *target, int arity,
+                             column_type *data, u64 data_row_size,
+                             u64 index_column_size, int dependent_column_size,
+                             float index_map_load_factor, int grid_size,
+                             int block_size, bool gpu_data_flag = false,
+                             bool sorted_flag = false,
+                             bool build_index_flag = true,
+                             bool tuples_array_flag = true);
 
 /**
  * @brief copy a relation into an **empty** relation
@@ -211,6 +217,7 @@ struct Relation {
     int arity;
     int index_column_size;
     std::string name;
+    int dependent_column_size = 0;
 
     GHashRelContainer *delta;
     GHashRelContainer *newt;
@@ -224,4 +231,4 @@ struct Relation {
 
 void load_relation(Relation *target, std::string name, int arity,
                    column_type *data, u64 data_row_size, u64 index_column_size,
-                   int grid_size, int block_size);
+                   int dependent_column_size, int grid_size, int block_size);
