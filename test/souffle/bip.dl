@@ -1,0 +1,12 @@
+.decl edge(v1:symbol, v2:symbol)
+.input edge
+.decl matching(v1:symbol, v2:symbol) choice-domain v1, v2
+.decl notBipartiteMatching()
+
+matching(x,y) :- edge(x,y).
+
+// No two edges share an endpoint.
+notBipartiteMatching() :- matching(x, y), matching(x, z), z != y.
+notBipartiteMatching() :- matching(y, x), matching(z, x), z != y.
+
+.printsize notBipartiteMatching
