@@ -7,6 +7,7 @@ struct LIE {
 
     std::vector<Relation *> update_relations;
     std::vector<Relation *> static_relations;
+    std::vector<Relation *> tmp_relations;
 
     int grid_size;
     int block_size;
@@ -16,6 +17,7 @@ struct LIE {
 
     void fixpoint_loop();
     void add_relations(Relation *rel, bool static_flag);
+    void add_tmp_relation(Relation *rel);
     void add_ra(ra_op op);
     // void ra(ra_op op);
 };

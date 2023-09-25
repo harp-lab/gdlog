@@ -54,7 +54,7 @@ __device__ void reorder_path(tuple_type inner, tuple_type outer,
 };
 __device__ tuple_generator_hook reorder_path_device = reorder_path;
 
-void graph_bench(const char *dataset_path, int block_size, int grid_size) {
+void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     KernelTimer timer;
     int relation_columns = 2;
     std::chrono::high_resolution_clock::time_point time_point_begin;
@@ -136,6 +136,6 @@ int main(int argc, char *argv[]) {
     grid_size = 32 * number_of_sm;
     std::locale loc("");
 
-    graph_bench(argv[1], block_size, grid_size);
+    analysis_bench(argv[1], block_size, grid_size);
     return 0;
 }

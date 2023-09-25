@@ -10,7 +10,7 @@ void print_hashes(GHashRelContainer *target, const char *rel_name) {
                target->index_map_size * sizeof(MEntity),
                cudaMemcpyDeviceToHost);
     std::cout << "Relation hash >>> " << rel_name << std::endl;
-    for (u64 i = 0; i < target->index_map_size; i++) {
+    for (tuple_size_t i = 0; i < target->index_map_size; i++) {
         std::cout << host_map[i].key << "    " << host_map[i].value
                   << std::endl;
     }
@@ -33,7 +33,11 @@ void print_tuple_rows(GHashRelContainer* target, const char *rel_name) {
                cudaMemcpyDeviceToHost);
     std::cout << "Relation tuples >>> " << rel_name << std::endl;
     std::cout << "Total tuples counts:  " <<  target->tuple_counts << std::endl;
-    for (u64 i = 0; i < target->tuple_counts; i++) {
+    u32 pt_size = target->tuple_counts;
+    if (target->tuple_counts > 3000) {
+        pt_size = 3000;
+    }
+    for (tuple_size_t i = 0; i < pt_size; i++) {
         tuple_type cur_tuple = tuples_host[i];
         
         tuple_type cur_tuple_host;
@@ -50,6 +54,9 @@ void print_tuple_rows(GHashRelContainer* target, const char *rel_name) {
         std::cout << std::endl;
         cudaFreeHost(cur_tuple_host);
     }
+    if (target->tuple_counts > 3000) {
+        std::cout << "........." << std::endl;
+    }
     std::cout << "end <<<" << std::endl;
 
     cudaFreeHost(tuples_host);
@@ -63,7 +70,7 @@ void print_tuple_raw_data(GHashRelContainer* target, const char *rel_name) {
     cudaMemcpy(raw_data_host, target->data_raw, mem_raw, cudaMemcpyDeviceToHost);
     std::cout << "Relation raw tuples >>> " << rel_name << std::endl;
     std::cout << "Total raw tuples counts:  " <<  target->data_raw_row_size << std::endl;
-    for (u64 i = 0; i < target->data_raw_row_size; i++) {
+    for (tuple_size_t i = 0; i < target->data_raw_row_size; i++) {
         if (raw_data_host[i*target->arity] != 3) {
             continue;
         }
@@ -75,3 +82,15 @@ void print_tuple_raw_data(GHashRelContainer* target, const char *rel_name) {
     cudaFreeHost(raw_data_host);
 }
 
+void print_memory_usage(){
+    int num_gpus;
+    size_t free, total;
+    cudaGetDeviceCount( &num_gpus );
+    for ( int gpu_id = 0; gpu_id < num_gpus; gpu_id++ ) {
+        cudaSetDevice( gpu_id );
+        int id;
+        cudaGetDevice( &id );
+        cudaMemGetInfo( &free, &total );
+        std::cout << "GPU " << id << " memory: free=" << free << ", total=" << total << std::endl;
+    }
+}

@@ -19,11 +19,28 @@ void RelationalJoin::operator()() {
     GHashRelContainer *outer;
     if (outer_ver == DELTA) {
         outer = outer_rel->delta;
-    } else {
+    } else if (outer_ver == FULL) {
         outer = outer_rel->full;
+    } else {
+        // temp relation can be outer relation
+        outer = outer_rel->newt;
     }
     int output_arity = output_rel->arity;
     // GHashRelContainer* output = output_rel->newt;
+
+    std::cout << "inner " << inner_rel->name << " : " << inner->tuple_counts
+            << " outer " << outer_rel->name << " : " << outer->tuple_counts
+            << std::endl;
+    // print_tuple_rows(inner, "inner");
+    // print_tuple_rows(outer, "outer");
+    if (outer->tuples == nullptr || outer->tuple_counts == 0) {
+        outer->tuple_counts = 0;
+        return;
+    }
+    if (inner->tuples == nullptr || inner->tuple_counts == 0) {
+        outer->tuple_counts = 0;
+        return;
+    }
 
     KernelTimer timer;
     // checkCuda(cudaDeviceSynchronize());
@@ -36,12 +53,11 @@ void RelationalJoin::operator()() {
     cudaMemcpy(outer_device, outer, sizeof(GHashRelContainer),
                cudaMemcpyHostToDevice);
 
-    u64 *result_counts_array;
+    tuple_size_t *result_counts_array;
     checkCuda(cudaMalloc((void **)&result_counts_array,
-                         outer->tuple_counts * sizeof(u64)));
+                         outer->tuple_counts * sizeof(tuple_size_t)));
 
-    // std::cout << "inner : " << inner->tuple_counts << " outer: " <<
-    // outer->tuple_counts << std::endl;
+    // print_tuple_rows(outer, "inber");
     checkCuda(cudaDeviceSynchronize());
     timer.start_timer();
     get_join_result_size<<<grid_size, block_size>>>(inner_device, outer_device,
@@ -49,18 +65,17 @@ void RelationalJoin::operator()() {
                                                     result_counts_array);
     checkCuda(cudaDeviceSynchronize());
 
-    u64 total_result_rows =
+    tuple_size_t total_result_rows =
         thrust::reduce(thrust::device, result_counts_array,
                        result_counts_array + outer->tuple_counts, 0);
 
     checkCuda(cudaDeviceSynchronize());
-    // std::cout << outer_rel->name << output_arity << " join result size(non
-    // dedup) " << total_result_rows << std::endl;
-    u64 *result_counts_offset;
+    std::cout << output_rel->name << "   " << outer->index_column_size << " join result size(non dedup) " << total_result_rows << std::endl;
+    tuple_size_t *result_counts_offset;
     checkCuda(cudaMalloc((void **)&result_counts_offset,
-                         outer->tuple_counts * sizeof(u64)));
+                         outer->tuple_counts * sizeof(tuple_size_t)));
     cudaMemcpy(result_counts_offset, result_counts_array,
-               outer->tuple_counts * sizeof(u64), cudaMemcpyDeviceToDevice);
+               outer->tuple_counts * sizeof(tuple_size_t), cudaMemcpyDeviceToDevice);
     thrust::exclusive_scan(thrust::device, result_counts_offset,
                            result_counts_offset + outer->tuple_counts,
                            result_counts_offset);
@@ -95,8 +110,8 @@ void RelationalJoin::operator()() {
                                 output_rel->index_column_size,
                                 output_rel->dependent_column_size, 0.8,
                                 grid_size, block_size, true, false, false);
+        // print_tuple_rows(output_rel->newt, "newt after join");
     } else {
-        std::cout << "wwwwwwwwwww " << std::endl;
         // data in current newt, merge
         GHashRelContainer *newt_tmp = new GHashRelContainer(
             output_rel->arity, output_rel->index_column_size,
@@ -118,16 +133,17 @@ void RelationalJoin::operator()() {
             tuple_indexed_less(output_rel->index_column_size,
                                output_rel->arity));
         checkCuda(cudaDeviceSynchronize());
-        cudaFree(newt_tmp->tuples);
-        cudaFree(old_newt->tuples);
+        // cudaFree(newt_tmp->tuples);
+        // cudaFree(old_newt->tuples);
         tp_buffer_end = thrust::unique(thrust::device, tp_buffer, tp_buffer_end,
                                        t_equal(output_rel->arity));
         checkCuda(cudaDeviceSynchronize());
-        u64 new_newt_counts = tp_buffer_end - tp_buffer;
+        tuple_size_t new_newt_counts = tp_buffer_end - tp_buffer;
+        // std::cout << " >>>>>>>>>> " << new_newt_counts * output_rel->arity * sizeof(column_type) << std::endl;
         column_type *new_newt_raw;
-        checkCuda(cudaMalloc((void **)&tp_buffer,
-                             (newt_tmp->tuple_counts + old_newt->tuple_counts) *
-                                 output_rel->arity * sizeof(column_type)));
+        checkCuda(cudaMalloc((void **)&new_newt_raw, new_newt_counts *
+                                                         output_rel->arity *
+                                                         sizeof(column_type)));
         flatten_tuples_raw_data<<<grid_size, block_size>>>(
             tp_buffer, new_newt_raw, new_newt_counts, output_rel->arity);
         checkCuda(cudaDeviceSynchronize());
@@ -138,6 +154,8 @@ void RelationalJoin::operator()() {
                                 new_newt_counts, output_rel->index_column_size,
                                 output_rel->dependent_column_size, 0.8,
                                 grid_size, block_size, true, true, false);
+        checkCuda(cudaDeviceSynchronize());
+        // print_tuple_rows(output_rel->newt, "join merge newt");
         // delete newt_tmp;
     }
 

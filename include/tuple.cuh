@@ -5,8 +5,9 @@
 using u64 = unsigned long long;
 using u32 = unsigned long;
 
-using column_type = u64;
+using column_type = u32;
 using tuple_type = column_type *;
+using tuple_size_t = u64;
 
 // TODO: use thrust vector as tuple type??
 // using t_gpu_index = thrust::device_vector<u64>;
@@ -38,7 +39,7 @@ typedef bool (*tuple_predicate) (tuple_type) ;
  * @return true
  * @return false
  */
-__host__ __device__ inline bool tuple_eq(tuple_type t1, tuple_type t2, u64 l) {
+__host__ __device__ inline bool tuple_eq(tuple_type t1, tuple_type t2, tuple_size_t l) {
     for (int i = 0; i < l; i++) {
         if (t1[i] != t2[i]) {
             return false;
@@ -50,7 +51,7 @@ __host__ __device__ inline bool tuple_eq(tuple_type t1, tuple_type t2, u64 l) {
 struct t_equal {
     u64 arity;
 
-    t_equal(u64 arity) { this->arity = arity; }
+    t_equal(tuple_size_t arity) { this->arity = arity; }
 
     __host__ __device__ bool operator()(const tuple_type &lhs,
                                         const tuple_type &rhs) {
@@ -93,10 +94,10 @@ __host__ __device__ inline u64 prefix_hash(tuple_type start_ptr,
 struct tuple_indexed_less {
 
     // u64 *index_columns;
-    u64 index_column_size;
+    tuple_size_t index_column_size;
     int arity;
 
-    tuple_indexed_less(u64 index_column_size, int arity) {
+    tuple_indexed_less(tuple_size_t index_column_size, int arity) {
         // this->index_columns = index_columns;
         this->index_column_size = index_column_size;
         this->arity = arity;
@@ -110,7 +111,7 @@ struct tuple_indexed_less {
         if (prefix_hash(lhs, index_column_size) ==
             prefix_hash(rhs, index_column_size)) {
             // same hash
-            for (u64 i = 0; i < arity; i++) {
+            for (tuple_size_t i = 0; i < arity; i++) {
                 if (lhs[i] < rhs[i]) {
                     return true;
                 } else if (lhs[i] > rhs[i]) {

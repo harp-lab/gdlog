@@ -18,6 +18,7 @@ file(GLOB source_file_gpu_ra
     "${gpu_ra_src}/relation.cu"
     "${gpu_ra_src}/lie.cu"
     "${gpu_ra_src}/copy.cu"
+    "${gpu_ra_src}/acopy.cu"
     "${gpu_ra_src}/join.cu"
 )
 
@@ -27,6 +28,10 @@ file(GLOB source_file_tc
 
 file(GLOB source_path_lenght
     "${test_dir}/path_length.cu"
+)
+
+file(GLOB source_cspa
+    "${test_dir}/cspa.cu"
 )
 
 add_library(gpu_ra "${source_file_gpu_ra}")
@@ -42,3 +47,8 @@ add_executable(PLEN ${source_path_lenght})
 target_link_libraries(PLEN gpu_ra)
 target_compile_features(PLEN PUBLIC cxx_std_20)
 set_target_properties(PLEN PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+
+add_executable(CSPA ${source_cspa})
+target_link_libraries(CSPA gpu_ra)
+target_compile_features(CSPA PUBLIC cxx_std_20)
+set_target_properties(CSPA PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

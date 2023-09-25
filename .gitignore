@@ -1,3 +1,5 @@
 build
 .cache
 .vscode
+*/*.csv
+*/**/log

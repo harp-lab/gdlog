@@ -56,6 +56,25 @@ struct RelationalCopy {
     void operator()();
 };
 
-using ra_op = std::variant<RelationalJoin, RelationalCopy>;
+struct RelationalACopy {
+    Relation *src_rel;
+    Relation *dest_rel;
+    tuple_copy_hook tuple_generator;
+    tuple_predicate tuple_pred;
 
-enum RAtypes { JOIN, COPY };
+    int grid_size;
+    int block_size;
+
+    RelationalACopy(Relation *src, Relation *dest,
+                    tuple_copy_hook tuple_generator, tuple_predicate tuple_pred,
+                    int grid_size, int block_size)
+        : src_rel(src), dest_rel(dest), tuple_generator(tuple_generator),
+          tuple_pred(tuple_pred), grid_size(grid_size), block_size(block_size) {
+    }
+
+    void operator()();
+};
+
+using ra_op = std::variant<RelationalJoin, RelationalCopy, RelationalACopy>;
+
+enum RAtypes { JOIN, COPY, ACOPY };

@@ -6,6 +6,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
+#include "../include/print.cuh"
 
 #include <variant>
 
@@ -19,6 +20,8 @@ void LIE::add_relations(Relation *rel, bool static_flag) {
         // add delta and newt for it
     }
 }
+
+void LIE::add_tmp_relation(Relation *rel) { tmp_relations.push_back(rel); }
 
 void LIE::fixpoint_loop() {
 
@@ -45,7 +48,9 @@ void LIE::fixpoint_loop() {
                    rel->full->tuple_counts * sizeof(tuple_type),
                    cudaMemcpyDeviceToDevice);
         rel->current_full_size = rel->full->tuple_counts;
-        copy_relation_container(rel->delta, rel->full);
+        copy_relation_container(rel->delta, rel->full, grid_size, block_size);
+        checkCuda(cudaDeviceSynchronize());
+        // std::cout << "wwwwwwwwww" << rel->delta->tuple_counts << std::endl;
     }
 
     while (true) {
@@ -55,52 +60,40 @@ void LIE::fixpoint_loop() {
                                             // timer.start_timer();
                                             op();
                                         },
+                                        [](RelationalACopy &op) { op(); },
                                         [](RelationalCopy &op) {
                                             if (op.src_ver == FULL) {
                                                 if (!op.copied) {
                                                     op();
+                                                    op.copied = true;
                                                 }
                                             } else {
                                                 op();
                                             }
                                         }},
                        ra_op);
+            checkCuda(cudaDeviceSynchronize());
             timer.stop_timer();
             join_time += timer.get_spent_time();
         }
 
-        // std::cout << "popluating new tuple" << std::endl;
+        // clean tmp relation
+        for (Relation *rel : tmp_relations) {
+            free_relation_container(rel->newt);
+        }
+
+        std::cout << "Iteration " << iteration_counter
+                  << " popluating new tuple" << std::endl;
         // merge delta into full
         bool fixpoint_flag = true;
         for (Relation *rel : update_relations) {
-
+            std::cout << rel->name << std::endl;
             // if (rel->newt->tuple_counts != 0) {
             //     fixpoint_flag = false;
             // }
-            timer.start_timer();
-            if (iteration_counter != 0 && rel->delta->tuple_counts != 0) {
-                // std::cout << rel->name << " merging ... " <<
-                // rel->newt->tuple_counts << std::endl;
-                tuple_type *tuple_full_buf;
-                checkCuda(cudaMalloc(
-                    (void **)&tuple_full_buf,
-                    (rel->current_full_size + rel->delta->tuple_counts) *
-                        sizeof(tuple_type)));
-                checkCuda(cudaDeviceSynchronize());
-                tuple_type *end_tuple_full_buf = thrust::merge(
-                    thrust::device, rel->tuple_full,
-                    rel->tuple_full + rel->current_full_size,
-                    rel->delta->tuples,
-                    rel->delta->tuples + rel->delta->tuple_counts,
-                    tuple_full_buf,
-                    tuple_indexed_less(rel->delta->index_column_size,
-                                       rel->delta->arity));
-                checkCuda(cudaDeviceSynchronize());
-                rel->current_full_size = end_tuple_full_buf - tuple_full_buf;
-                cudaFree(rel->tuple_full);
-                rel->tuple_full = tuple_full_buf;
+            if (iteration_counter == 0) {
+                free_relation_container(rel->delta);
             }
-            rel->buffered_delta_vectors.push_back(rel->delta);
             // drop the index of delta once merged, because it won't be used in
             // next iter when migrate more general case, this operation need to
             // be put off to end of all RA operation in current iteration
@@ -112,11 +105,14 @@ void LIE::fixpoint_loop() {
                 cudaFree(rel->delta->tuples);
                 rel->delta->tuples = nullptr;
             }
-            timer.stop_timer();
-            merge_time += timer.get_spent_time();
 
             timer.start_timer();
             if (rel->newt->tuple_counts == 0) {
+                rel->delta =
+                    new GHashRelContainer(rel->arity, rel->index_column_size,
+                                          rel->dependent_column_size);
+                std::cout << "iteration " << iteration_counter << " relation "
+                          << rel->name << " no new tuple added" << std::endl;
                 continue;
             }
             tuple_type *deduplicated_newt_tuples;
@@ -133,7 +129,7 @@ void LIE::fixpoint_loop() {
                                    rel->full->arity -
                                        rel->dependent_column_size));
             checkCuda(cudaDeviceSynchronize());
-            u64 deduplicate_size = deuplicated_end - deduplicated_newt_tuples;
+            tuple_size_t deduplicate_size = deuplicated_end - deduplicated_newt_tuples;
 
             if (deduplicate_size != 0) {
                 fixpoint_flag = false;
@@ -154,25 +150,36 @@ void LIE::fixpoint_loop() {
             free_relation_container(rel->newt);
 
             timer.start_timer();
-            cudaMallocHost((void **)&rel->delta, sizeof(GHashRelContainer));
-            // rel->delta = new GHashRelContainer();
+            // cudaMallocHost((void **)&rel->delta, sizeof(GHashRelContainer));
+            rel->delta = new GHashRelContainer(
+                rel->arity, rel->index_column_size, rel->dependent_column_size);
             load_relation_container(rel->delta, rel->full->arity,
                                     deduplicated_raw, deduplicate_size,
                                     rel->full->index_column_size,
                                     rel->full->dependent_column_size,
                                     rel->full->index_map_load_factor, grid_size,
                                     block_size, true, true, true);
+            checkCuda(cudaDeviceSynchronize());
             timer.stop_timer();
             rebuild_delta_time += timer.get_spent_time();
 
-            // print_tuple_rows(path_full, "Path full after load newt");
+            timer.start_timer();
+            rel->flush_delta(grid_size, block_size);
+            timer.stop_timer();
+            merge_time += timer.get_spent_time();
+
+            // print_tuple_rows(rel->full, "Path full after load newt");
             std::cout << "iteration " << iteration_counter << " relation "
                       << rel->name
                       << " finish dedup new tuples : " << deduplicate_size
                       << " delta tuple size: " << rel->delta->tuple_counts
                       << " full counts " << rel->current_full_size << std::endl;
-            iteration_counter++;
         }
+        checkCuda(cudaDeviceSynchronize());
+        std::cout << "Iteration " << iteration_counter << " finish populating"
+                  << std::endl;
+        print_memory_usage();
+        iteration_counter++;
         // if (iteration_counter >= 3) {
         //     break;
         // }
@@ -184,9 +191,9 @@ void LIE::fixpoint_loop() {
     // merge full after reach fixpoint
     timer.start_timer();
     for (Relation *rel : update_relations) {
-        if (rel->current_full_size <= rel->full->tuple_counts) {
-            continue;
-        }
+        // if (rel->current_full_size <= rel->full->tuple_counts) {
+        //     continue;
+        // }
         column_type *new_full_raw_data;
         checkCuda(cudaMalloc((void **)&new_full_raw_data,
                              rel->current_full_size * rel->full->arity *
@@ -200,15 +207,21 @@ void LIE::fixpoint_loop() {
             rel->full, rel->full->arity, new_full_raw_data,
             rel->current_full_size, rel->full->index_column_size,
             rel->full->dependent_column_size, rel->full->index_map_load_factor,
-            grid_size, block_size, true, true);
+            grid_size, block_size, true, true, true);
         checkCuda(cudaDeviceSynchronize());
-        std::cout << "Finished! path has " << rel->full->tuple_counts
-                  << std::endl;
+        std::cout << "Finished! " << rel->name << " has "
+                  << rel->full->tuple_counts << std::endl;
+        for (auto &delta_b : rel->buffered_delta_vectors) {
+            free_relation_container(delta_b);
+        }
+        free_relation_container(rel->delta);
+        free_relation_container(rel->newt);
     }
     timer.stop_timer();
     float merge_full_time = timer.get_spent_time();
 
-    std::cout << "Join time: " << join_time << " ; merge time: " << merge_time
+    std::cout << "Join time: " << join_time
+              << " ; merge full time: " << merge_time
               << " ; rebuild full time: " << merge_full_time
               << " ; rebuild delta time: " << rebuild_delta_time
               << " ; set diff time: " << set_diff_time << std::endl;
