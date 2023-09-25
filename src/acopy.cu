@@ -10,10 +10,11 @@
 #include "../include/timer.cuh"
 
 void RelationalACopy::operator()() {
-    
+
     GHashRelContainer *src = src_rel->newt;
     GHashRelContainer *dest = dest_rel->newt;
-    std::cout << "ACopy " << src_rel->name << " to " << dest_rel->name << std::endl;
+    std::cout << "ACopy " << src_rel->name << " to " << dest_rel->name
+              << std::endl;
 
     if (src->tuple_counts == 0) {
         free_relation_container(dest);
@@ -23,14 +24,15 @@ void RelationalACopy::operator()() {
 
     int output_arity = dest_rel->arity;
     column_type *copied_raw_data;
-    checkCuda(
-        cudaMalloc((void **)&copied_raw_data,
-                   src->tuple_counts * output_arity * sizeof(column_type)));
+    u64 copied_raw_data_size =
+        src->tuple_counts * output_arity * sizeof(column_type);
+    checkCuda(cudaMalloc((void **)&copied_raw_data, copied_raw_data_size));
+    cudaMemset(copied_raw_data, 0, copied_raw_data_size);
     get_copy_result<<<grid_size, block_size>>>(src->tuples, copied_raw_data,
                                                output_arity, src->tuple_counts,
                                                tuple_generator);
     checkCuda(cudaDeviceSynchronize());
-    
+
     free_relation_container(dest);
     load_relation_container(dest, dest->arity, copied_raw_data,
                             src->tuple_counts, src->index_column_size,

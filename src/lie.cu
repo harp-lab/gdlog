@@ -1,12 +1,12 @@
 #include "../include/dynamic_dispatch.h"
 #include "../include/exception.cuh"
 #include "../include/lie.cuh"
+#include "../include/print.cuh"
 #include "../include/timer.cuh"
 #include <iostream>
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
-#include "../include/print.cuh"
 
 #include <variant>
 
@@ -116,8 +116,12 @@ void LIE::fixpoint_loop() {
                 continue;
             }
             tuple_type *deduplicated_newt_tuples;
+            u64 deduplicated_newt_tuples_mem_size =
+                rel->newt->tuple_counts * sizeof(tuple_type);
             checkCuda(cudaMalloc((void **)&deduplicated_newt_tuples,
-                                 rel->newt->tuple_counts * sizeof(tuple_type)));
+                                 deduplicated_newt_tuples_mem_size));
+            cudaMemset(deduplicated_newt_tuples, 0,
+                       deduplicated_newt_tuples_mem_size);
             //////
 
             tuple_type *deuplicated_end = thrust::set_difference(
@@ -129,7 +133,8 @@ void LIE::fixpoint_loop() {
                                    rel->full->arity -
                                        rel->dependent_column_size));
             checkCuda(cudaDeviceSynchronize());
-            tuple_size_t deduplicate_size = deuplicated_end - deduplicated_newt_tuples;
+            tuple_size_t deduplicate_size =
+                deuplicated_end - deduplicated_newt_tuples;
 
             if (deduplicate_size != 0) {
                 fixpoint_flag = false;
@@ -138,9 +143,11 @@ void LIE::fixpoint_loop() {
             set_diff_time += timer.get_spent_time();
 
             column_type *deduplicated_raw;
+            u64 dedeuplicated_raw_mem_size =
+                deduplicate_size * rel->newt->arity * sizeof(column_type);
             checkCuda(cudaMalloc((void **)&deduplicated_raw,
-                                 deduplicate_size * rel->newt->arity *
-                                     sizeof(column_type)));
+                                 dedeuplicated_raw_mem_size));
+            cudaMemset(deduplicated_raw, 0, dedeuplicated_raw_mem_size);
             flatten_tuples_raw_data<<<grid_size, block_size>>>(
                 deduplicated_newt_tuples, deduplicated_raw, deduplicate_size,
                 rel->newt->arity);
@@ -195,9 +202,11 @@ void LIE::fixpoint_loop() {
         //     continue;
         // }
         column_type *new_full_raw_data;
+        u64 new_full_raw_data_mem_size =
+            rel->current_full_size * rel->full->arity * sizeof(column_type);
         checkCuda(cudaMalloc((void **)&new_full_raw_data,
-                             rel->current_full_size * rel->full->arity *
-                                 sizeof(column_type)));
+                             new_full_raw_data_mem_size));
+        cudaMemset(new_full_raw_data, 0, new_full_raw_data_mem_size);
         flatten_tuples_raw_data<<<grid_size, block_size>>>(
             rel->tuple_full, new_full_raw_data, rel->current_full_size,
             rel->full->arity);

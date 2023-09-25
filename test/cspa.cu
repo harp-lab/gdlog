@@ -251,12 +251,6 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     // analysis_scc.add_tmp_relation(value_flow_2__2_1);
     // analysis_scc.add_tmp_relation(value_flow_forward_2__2_1);
 
-    // acopy need be executed before others
-    // analysis_scc.add_ra(RelationalCopy(value_flow_2__1_2, DELTA, value_flow_2__2_1,
-    //                                cp_2_1__1_2_host, nullptr, grid_size,
-    //                                block_size));
-
-
     // join_vf_vfvf: ValueFlow(x, y) :- ValueFlow(x, z), ValueFlow(z, y).
     float join_vf_vfvf_detail_time[3];
     tuple_generator_hook join_10_11_host;
@@ -314,25 +308,25 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     // join_tmp_vf_ma : tmp_rel_ma(w, x) :- ValueFlow(z, x), MemoryAlias(z, w).
     // join_va_tmp_vf : ValueAlias(x, y) :- tmp_rel_ma(w, x), ValueFlow(w,y).
     // v1
-    float join_tmp_vf_ma_detail[3];
-    analysis_scc.add_ra(
-        RelationalJoin(memory_alias_2__1_2, FULL , value_flow_2__1_2, DELTA,
-                       tmp_rel_ma, join_01_11_host, nullptr, LEFT, grid_size,
-                       block_size, join_tmp_vf_ma_detail));
-    float join_va_tmp_vf_detail[3];
-    analysis_scc.add_ra(
-        RelationalJoin(value_flow_2__1_2, FULL, tmp_rel_ma, NEWT,
-                       value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_va_tmp_vf_detail));
-    // v2
-    analysis_scc.add_ra(
-        RelationalJoin(value_flow_2__1_2, FULL, memory_alias_2__1_2, DELTA, 
-                       tmp_rel_ma, join_10_11_host, nullptr, LEFT, grid_size,
-                       block_size, join_tmp_vf_ma_detail));
-    analysis_scc.add_ra(
-        RelationalJoin(value_flow_2__1_2, FULL, tmp_rel_ma, NEWT,
-                       value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_va_tmp_vf_detail));
+    // float join_tmp_vf_ma_detail[3];
+    // analysis_scc.add_ra(
+    //     RelationalJoin(memory_alias_2__1_2, FULL , value_flow_2__1_2, DELTA,
+    //                    tmp_rel_ma, join_01_11_host, nullptr, LEFT, grid_size,
+    //                    block_size, join_tmp_vf_ma_detail));
+    // float join_va_tmp_vf_detail[3];
+    // analysis_scc.add_ra(
+    //     RelationalJoin(value_flow_2__1_2, FULL, tmp_rel_ma, NEWT,
+    //                    value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
+    //                    grid_size, block_size, join_va_tmp_vf_detail));
+    // // v2
+    // analysis_scc.add_ra(
+    //     RelationalJoin(value_flow_2__1_2, FULL, memory_alias_2__1_2, DELTA, 
+    //                    tmp_rel_ma, join_10_11_host, nullptr, LEFT, grid_size,
+    //                    block_size, join_tmp_vf_ma_detail));
+    // analysis_scc.add_ra(
+    //     RelationalJoin(value_flow_2__1_2, FULL, tmp_rel_ma, NEWT,
+    //                    value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
+    //                    grid_size, block_size, join_va_tmp_vf_detail));
     
     
 

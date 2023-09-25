@@ -44,7 +44,8 @@ __global__ void calculate_index_hash(GHashRelContainer *target,
     }
 }
 
-__global__ void count_index_entry_size(GHashRelContainer *target, tuple_size_t *size) {
+__global__ void count_index_entry_size(GHashRelContainer *target,
+                                       tuple_size_t *size) {
     u64 index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= target->index_map_size)
         return;
@@ -227,13 +228,12 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
     }
 }
 
-__global__ void get_join_result(GHashRelContainer *inner_table,
-                                GHashRelContainer *outer_table,
-                                int join_column_counts,
-                                tuple_generator_hook tp_gen, int output_arity,
-                                column_type *output_raw_data,
-                                tuple_size_t *res_count_array, tuple_size_t *res_offset,
-                                JoinDirection direction) {
+__global__ void
+get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
+                int join_column_counts, tuple_generator_hook tp_gen,
+                int output_arity, column_type *output_raw_data,
+                tuple_size_t *res_count_array, tuple_size_t *res_offset,
+                JoinDirection direction) {
     int index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= outer_table->tuple_counts)
         return;
@@ -320,8 +320,8 @@ __global__ void get_join_result(GHashRelContainer *inner_table,
 }
 
 __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
-                                        column_type *raw, tuple_size_t tuple_counts,
-                                        int arity) {
+                                        column_type *raw,
+                                        tuple_size_t tuple_counts, int arity) {
     int index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= tuple_counts)
         return;
@@ -336,7 +336,8 @@ __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
 
 __global__ void get_copy_result(tuple_type *src_tuples,
                                 column_type *dest_raw_data, int output_arity,
-                                tuple_size_t tuple_counts, tuple_copy_hook tp_gen) {
+                                tuple_size_t tuple_counts,
+                                tuple_copy_hook tp_gen) {
     int index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= tuple_counts)
         return;
@@ -349,17 +350,16 @@ __global__ void get_copy_result(tuple_type *src_tuples,
 }
 
 void Relation::flush_delta(int grid_size, int block_size) {
-    tuple_size_t new_full_size =
-        current_full_size + delta->tuple_counts;
+    tuple_size_t new_full_size = current_full_size + delta->tuple_counts;
     // std::cout << new_full_size << std::endl;
     tuple_type *tuple_full_buf;
-    checkCuda(cudaMalloc((void **)&tuple_full_buf,
-                            new_full_size * sizeof(tuple_type)));
+    u64 tuple_full_buf_mem_size = new_full_size * sizeof(tuple_type);
+    checkCuda(cudaMalloc((void **)&tuple_full_buf, tuple_full_buf_mem_size));
+    cudaMemset(tuple_full_buf, 0, tuple_full_buf_mem_size);
     checkCuda(cudaDeviceSynchronize());
     tuple_type *end_tuple_full_buf = thrust::merge(
-        thrust::device, tuple_full,
-        tuple_full + current_full_size, delta->tuples,
-        delta->tuples + delta->tuple_counts, tuple_full_buf,
+        thrust::device, tuple_full, tuple_full + current_full_size,
+        delta->tuples, delta->tuples + delta->tuple_counts, tuple_full_buf,
         tuple_indexed_less(delta->index_column_size, delta->arity));
     checkCuda(cudaDeviceSynchronize());
     current_full_size = end_tuple_full_buf - tuple_full_buf;
@@ -369,17 +369,16 @@ void Relation::flush_delta(int grid_size, int block_size) {
     full->tuples = tuple_full;
     full->tuple_counts = current_full_size;
     if (index_flag) {
-        reload_full_temp(
-            full, arity, tuple_full,
-            current_full_size, index_column_size,
-            dependent_column_size, full->index_map_load_factor,
-            grid_size, block_size);
+        reload_full_temp(full, arity, tuple_full, current_full_size,
+                         index_column_size, dependent_column_size,
+                         full->index_map_load_factor, grid_size, block_size);
     }
 }
 
 void load_relation_container(GHashRelContainer *target, int arity,
                              column_type *data, tuple_size_t data_row_size,
-                             tuple_size_t index_column_size, int dependent_column_size,
+                             tuple_size_t index_column_size,
+                             int dependent_column_size,
                              float index_map_load_factor, int grid_size,
                              int block_size, bool gpu_data_flag,
                              bool sorted_flag, bool build_index_flag,
@@ -410,8 +409,9 @@ void load_relation_container(GHashRelContainer *target, int arity,
     }
     if (tuples_array_flag) {
         // init tuple to be unsorted raw tuple data address
-        checkCuda(cudaMalloc((void **)&target->tuples,
-                             data_row_size * sizeof(tuple_type)));
+        u64 target_tuples_mem_size = data_row_size * sizeof(tuple_type);
+        checkCuda(cudaMalloc((void **)&target->tuples, target_tuples_mem_size));
+        cudaMemset(target->tuples, 0, target_tuples_mem_size);
         init_tuples_unsorted<<<grid_size, block_size>>>(
             target->tuples, target->data_raw, arity, data_row_size);
     }
@@ -442,6 +442,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
         u64 index_map_mem_size = target->index_map_size * sizeof(MEntity);
         checkCuda(
             cudaMalloc((void **)&(target->index_map), index_map_mem_size));
+        cudaMemset(target->index_map, 0, index_map_mem_size);
 
         // load inited data struct into GPU memory
         GHashRelContainer *target_device;
@@ -461,9 +462,10 @@ void load_relation_container(GHashRelContainer *target, int arity,
 }
 
 void reload_full_temp(GHashRelContainer *target, int arity, tuple_type *tuples,
-                      tuple_size_t data_row_size, tuple_size_t index_column_size,
-                      int dependent_column_size, float index_map_load_factor,
-                      int grid_size, int block_size) {
+                      tuple_size_t data_row_size,
+                      tuple_size_t index_column_size, int dependent_column_size,
+                      float index_map_load_factor, int grid_size,
+                      int block_size) {
     //
     target->arity = arity;
     target->tuple_counts = data_row_size;
@@ -478,6 +480,7 @@ void reload_full_temp(GHashRelContainer *target, int arity, tuple_type *tuples,
     }
     u64 index_map_mem_size = target->index_map_size * sizeof(MEntity);
     checkCuda(cudaMalloc((void **)&(target->index_map), index_map_mem_size));
+    cudaMemset(target->index_map, 0, index_map_mem_size);
 
     // load inited data struct into GPU memory
     GHashRelContainer *target_device;
@@ -515,20 +518,20 @@ void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src,
     //            cudaMemcpyDeviceToDevice);
 
     free_relation_container(dst);
-    checkCuda(
-        cudaMalloc((void **)&dst->data_raw,
-                   src->arity * src->tuple_counts * sizeof(column_type)));
+    checkCuda(cudaMalloc((void **)&dst->data_raw,
+                         src->arity * src->tuple_counts * sizeof(column_type)));
     cudaMemcpy(dst->data_raw, src->data_raw,
                src->arity * src->tuple_counts * sizeof(column_type),
                cudaMemcpyDeviceToDevice);
-    load_relation_container(dst, src->arity, dst->data_raw,
-                            src->tuple_counts, src->index_column_size,
-                            src->dependent_column_size, 0.8, grid_size,
-                            block_size, true, true, true);
+    load_relation_container(dst, src->arity, dst->data_raw, src->tuple_counts,
+                            src->index_column_size, src->dependent_column_size,
+                            0.8, grid_size, block_size, true, true, true);
 }
 
 void free_relation_container(GHashRelContainer *target) {
     target->tuple_counts = 0;
+    target->index_map_size = 0;
+    target->data_raw_row_size = 0;
     if (target->index_map != nullptr) {
         cudaFree(target->index_map);
         target->index_map = nullptr;
@@ -544,8 +547,9 @@ void free_relation_container(GHashRelContainer *target) {
 }
 
 void load_relation(Relation *target, std::string name, int arity,
-                   column_type *data, tuple_size_t data_row_size, tuple_size_t index_column_size,
-                   int dependent_column_size, int grid_size, int block_size) {
+                   column_type *data, tuple_size_t data_row_size,
+                   tuple_size_t index_column_size, int dependent_column_size,
+                   int grid_size, int block_size) {
 
     target->name = name;
     target->arity = arity;

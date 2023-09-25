@@ -9,8 +9,8 @@
 
 #include "../include/exception.cuh"
 #include "../include/lie.cuh"
-#include "../include/timer.cuh"
 #include "../include/print.cuh"
+#include "../include/timer.cuh"
 
 //////////////////////////////////////////////////////
 
@@ -69,11 +69,16 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     column_type *raw_graph_data =
         get_relation_from_file(dataset_path, graph_edge_counts, 2, '\t');
     column_type *raw_reverse_graph_data;
+    u64 raw_reverse_graph_data_mem_size =
+        graph_edge_counts * 2 * sizeof(column_type);
     cudaMallocHost((void **)&raw_reverse_graph_data,
-                   graph_edge_counts * 2 * sizeof(column_type));
+                   raw_reverse_graph_data_mem_size);
+    cudaMemset(raw_reverse_graph_data, 0, raw_reverse_graph_data_mem_size);
     column_type *raw_path_data;
+    u64 raw_path_data_mem_size = graph_edge_counts * 3 * sizeof(column_type);
     cudaMallocHost((void **)&raw_path_data,
-                   graph_edge_counts * 3 * sizeof(column_type));
+                   raw_path_data_mem_size);
+    cudaMemset(raw_path_data, 0, raw_path_data_mem_size);
 
     std::cout << "init path ... " << std::endl;
     for (u64 i = 0; i < graph_edge_counts; i++) {
@@ -90,10 +95,10 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     std::cout << "finish reverse graph." << std::endl;
 
     timer.start_timer();
-    Relation *edge_2__2_1;
-    cudaMallocHost((void **)&edge_2__2_1, sizeof(Relation));
-    Relation *path_3__1_2_3;
-    cudaMallocHost((void **)&path_3__1_2_3, sizeof(Relation));
+    Relation *edge_2__2_1 = new Relation();
+    // cudaMallocHost((void **)&edge_2__2_1, sizeof(Relation));
+    Relation *path_3__1_2_3 = new Relation();
+    // cudaMallocHost((void **)&path_3__1_2_3, sizeof(Relation));
     std::cout << "edge size " << graph_edge_counts << std::endl;
     load_relation(path_3__1_2_3, "path_3__1_2_3", 3, raw_path_data,
                   graph_edge_counts, 1, 1, grid_size, block_size);
@@ -119,7 +124,6 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     timer.stop_timer();
     // print_tuple_rows(path_3__1_2_3->full, "full path");
     std::cout << "PLEN time: " << timer.get_spent_time() << std::endl;
-
 }
 
 int main(int argc, char *argv[]) {
