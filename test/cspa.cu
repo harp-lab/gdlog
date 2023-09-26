@@ -268,7 +268,6 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
                        value_flow_2__1_2, join_01_11_host, nullptr, LEFT,
                        grid_size, block_size, join_vf_vfvf_detail_time));
 
-
     // join_va_vf_vf: ValueAlias(x, y) :- ValueFlow(z, x), ValueFlow(z, y).
     // v1
     float join_va_vfvf_detail_time[3];
@@ -294,7 +293,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     analysis_scc.add_ra(
         RelationalJoin(dereference_2__1_2, FULL, value_alias_2__1_2, DELTA,
                        tmp_rel_def, join_10_11_host, nullptr, LEFT, grid_size,
-                       grid_size, join_temp_rel_def_detail));
+                       block_size, join_temp_rel_def_detail));
 
     // WARNING: tmp relation can only in outer because it doesn't include
     // index!
@@ -320,20 +319,17 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     //                    grid_size, block_size, join_va_tmp_vf_detail));
     // // v2
     // analysis_scc.add_ra(
-    //     RelationalJoin(value_flow_2__1_2, FULL, memory_alias_2__1_2, DELTA, 
+    //     RelationalJoin(value_flow_2__1_2, FULL, memory_alias_2__1_2, DELTA,
     //                    tmp_rel_ma, join_10_11_host, nullptr, LEFT, grid_size,
     //                    block_size, join_tmp_vf_ma_detail));
     // analysis_scc.add_ra(
     //     RelationalJoin(value_flow_2__1_2, FULL, tmp_rel_ma, NEWT,
     //                    value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
     //                    grid_size, block_size, join_va_tmp_vf_detail));
-    
-    
 
-    analysis_scc.add_ra(RelationalACopy(value_flow_2__1_2,
-                                    value_flow_2__2_1,
-                                    cp_2_1__1_2_host, nullptr, grid_size,
-                                    block_size));
+    analysis_scc.add_ra(RelationalACopy(value_flow_2__1_2, value_flow_2__2_1,
+                                        cp_2_1__1_2_host, nullptr, grid_size,
+                                        block_size));
 
     analysis_scc.fixpoint_loop();
     // print_tuple_rows(value_flow_2__1_2->full, "value_flow_2__1_2");
