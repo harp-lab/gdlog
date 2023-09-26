@@ -27,10 +27,11 @@ void RelationalACopy::operator()() {
     u64 copied_raw_data_size =
         src->tuple_counts * output_arity * sizeof(column_type);
     checkCuda(cudaMalloc((void **)&copied_raw_data, copied_raw_data_size));
-    cudaMemset(copied_raw_data, 0, copied_raw_data_size);
+    checkCuda(cudaMemset(copied_raw_data, 0, copied_raw_data_size));
     get_copy_result<<<grid_size, block_size>>>(src->tuples, copied_raw_data,
                                                output_arity, src->tuple_counts,
                                                tuple_generator);
+    checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
 
     free_relation_container(dest);

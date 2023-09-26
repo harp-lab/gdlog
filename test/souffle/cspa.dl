@@ -28,7 +28,7 @@ ValueFlow(x, y) :- Assign(x, z), MemoryAlias(z, y).
 // tmp(z, x) :- Dereference(y, x), ValueAlias(y, z).
 MemoryAlias(x, w) :- Dereference(y, x), ValueAlias(y, z), Dereference(z, w).
 // MemoryAlias(x, w) :- tmp(z, x), Dereference(z, w).
-// ValueAlias(x, y) :- ValueFlow(z, x), MemoryAlias(z, w),ValueFlow(w, y).
+ValueAlias(x, y) :- ValueFlow(z, x), MemoryAlias(z, w), ValueFlow(w, y).
 
 
 ValueFlow(y, x) :- Assign(y, x).

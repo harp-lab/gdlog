@@ -46,18 +46,18 @@ void RelationalJoin::operator()() {
     // checkCuda(cudaDeviceSynchronize());
     GHashRelContainer *inner_device;
     checkCuda(cudaMalloc((void **)&inner_device, sizeof(GHashRelContainer)));
-    cudaMemcpy(inner_device, inner, sizeof(GHashRelContainer),
-               cudaMemcpyHostToDevice);
+    checkCuda(cudaMemcpy(inner_device, inner, sizeof(GHashRelContainer),
+               cudaMemcpyHostToDevice));
     GHashRelContainer *outer_device;
     checkCuda(cudaMalloc((void **)&outer_device, sizeof(GHashRelContainer)));
-    cudaMemcpy(outer_device, outer, sizeof(GHashRelContainer),
-               cudaMemcpyHostToDevice);
+    checkCuda(cudaMemcpy(outer_device, outer, sizeof(GHashRelContainer),
+               cudaMemcpyHostToDevice));
 
     tuple_size_t *result_counts_array;
     checkCuda(cudaMalloc((void **)&result_counts_array,
                          outer->tuple_counts * sizeof(tuple_size_t)));
-    cudaMemset(result_counts_array, 0,
-               outer->tuple_counts * sizeof(tuple_size_t));
+    checkCuda(cudaMemset(result_counts_array, 0,
+               outer->tuple_counts * sizeof(tuple_size_t)));
 
     // print_tuple_rows(outer, "inber");
     checkCuda(cudaDeviceSynchronize());
@@ -65,6 +65,7 @@ void RelationalJoin::operator()() {
     get_join_result_size<<<grid_size, block_size>>>(inner_device, outer_device,
                                                     outer->index_column_size,
                                                     result_counts_array);
+    checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
 
     tuple_size_t total_result_rows =
@@ -78,9 +79,9 @@ void RelationalJoin::operator()() {
     tuple_size_t *result_counts_offset;
     checkCuda(cudaMalloc((void **)&result_counts_offset,
                          outer->tuple_counts * sizeof(tuple_size_t)));
-    cudaMemcpy(result_counts_offset, result_counts_array,
+    checkCuda(cudaMemcpy(result_counts_offset, result_counts_array,
                outer->tuple_counts * sizeof(tuple_size_t),
-               cudaMemcpyDeviceToDevice);
+               cudaMemcpyDeviceToDevice));
     thrust::exclusive_scan(thrust::device, result_counts_offset,
                            result_counts_offset + outer->tuple_counts,
                            result_counts_offset);
@@ -95,16 +96,17 @@ void RelationalJoin::operator()() {
         total_result_rows * output_arity * sizeof(column_type);
     checkCuda(
         cudaMalloc((void **)&join_res_raw_data, join_res_raw_data_mem_size));
-    cudaMemset(join_res_raw_data, 0, join_res_raw_data_mem_size);
+    checkCuda(cudaMemset(join_res_raw_data, 0, join_res_raw_data_mem_size));
     get_join_result<<<grid_size, block_size>>>(
         inner_device, outer_device, outer->index_column_size, tuple_generator,
         output_arity, join_res_raw_data, result_counts_array,
         result_counts_offset, direction);
+    checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
     timer.stop_timer();
     // detail_time[1] = timer.get_spent_time();
-    cudaFree(result_counts_array);
-    cudaFree(result_counts_offset);
+    checkCuda(cudaFree(result_counts_array));
+    checkCuda(cudaFree(result_counts_offset));
 
     timer.start_timer();
     // // reload newt
@@ -154,11 +156,12 @@ void RelationalJoin::operator()() {
         u64 new_newt_raw_mem_size =
             new_newt_counts * output_rel->arity * sizeof(column_type);
         checkCuda(cudaMalloc((void **)&new_newt_raw, new_newt_raw_mem_size));
-        cudaMemset(new_newt_raw, 0, new_newt_raw_mem_size);
+        checkCuda(cudaMemset(new_newt_raw, 0, new_newt_raw_mem_size));
         flatten_tuples_raw_data<<<grid_size, block_size>>>(
             tp_buffer, new_newt_raw, new_newt_counts, output_rel->arity);
+        checkCuda(cudaGetLastError());
         checkCuda(cudaDeviceSynchronize());
-        cudaFree(tp_buffer);
+        checkCuda(cudaFree(tp_buffer));
         free_relation_container(old_newt);
         free_relation_container(newt_tmp);
         load_relation_container(output_rel->newt, output_arity, new_newt_raw,
@@ -177,6 +180,6 @@ void RelationalJoin::operator()() {
     // std::cout << output_rel->name << " join result size " <<
     // output_rel->newt->tuple_counts <<std::endl;
 
-    cudaFree(inner_device);
-    cudaFree(outer_device);
+    checkCuda(cudaFree(inner_device));
+    checkCuda(cudaFree(outer_device));
 }

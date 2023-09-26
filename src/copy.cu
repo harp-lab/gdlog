@@ -31,10 +31,11 @@ void RelationalCopy::operator()() {
     u64 copied_raw_data_size =
         src->tuple_counts * output_arity * sizeof(column_type);
     checkCuda(cudaMalloc((void **)&copied_raw_data, copied_raw_data_size));
-    cudaMemset(copied_raw_data, 0, copied_raw_data_size);
+    checkCuda(cudaMemset(copied_raw_data, 0, copied_raw_data_size));
     get_copy_result<<<grid_size, block_size>>>(src->tuples, copied_raw_data,
                                                output_arity, src->tuple_counts,
                                                tuple_generator);
+    checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
 
     if (dest->tuples == nullptr || dest->tuple_counts == 0) {
@@ -57,15 +58,15 @@ void RelationalCopy::operator()() {
         u64 tp_buffer_mem_size =
             (old_newt->tuple_counts + src->tuple_counts) * sizeof(tuple_type);
         checkCuda(cudaMalloc((void **)&tp_buffer, tp_buffer_mem_size));
-        cudaMemset(tp_buffer, 0, tp_buffer_mem_size);
+        checkCuda(cudaMemset(tp_buffer, 0, tp_buffer_mem_size));
         tuple_type *tp_buffer_end = thrust::merge(
             thrust::device, old_newt->tuples,
             old_newt->tuples + old_newt->tuple_counts, tmp->tuples,
             tmp->tuples + tmp->tuple_counts, tp_buffer,
             tuple_indexed_less(dest->index_column_size, output_arity));
         checkCuda(cudaDeviceSynchronize());
-        cudaFree(tmp->tuples);
-        cudaFree(old_newt->tuples);
+        // checkCuda(cudaFree(tmp->tuples));
+        // checkCuda(cudaFree(old_newt->tuples));
         tp_buffer_end = thrust::unique(thrust::device, tp_buffer, tp_buffer_end,
                                        t_equal(output_arity));
         checkCuda(cudaDeviceSynchronize());
@@ -77,8 +78,9 @@ void RelationalCopy::operator()() {
         checkCuda(cudaMalloc((void **)&new_newt_raw, new_newt_raw_mem_size));
         flatten_tuples_raw_data<<<grid_size, block_size>>>(
             tp_buffer, new_newt_raw, new_newt_counts, output_arity);
+        checkCuda(cudaGetLastError());
         checkCuda(cudaDeviceSynchronize());
-        cudaFree(tp_buffer);
+        checkCuda(cudaFree(tp_buffer));
         free_relation_container(old_newt);
         free_relation_container(tmp);
         load_relation_container(dest, output_arity, new_newt_raw,
@@ -87,4 +89,5 @@ void RelationalCopy::operator()() {
                                 block_size, true, true, false);
         // delete tmp;
     }
+    std::cout << "copy finish " << std::endl;
 }

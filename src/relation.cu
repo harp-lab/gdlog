@@ -2,6 +2,7 @@
 #include "../include/exception.cuh"
 #include "../include/print.cuh"
 #include "../include/relation.cuh"
+#include <iostream>
 #include <thrust/sort.h>
 #include <thrust/unique.h>
 
@@ -158,13 +159,6 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
     for (tuple_size_t i = index; i < outer_table->tuple_counts; i += stride) {
         tuple_type outer_tuple = outer_table->tuples[i];
 
-        // column_type* outer_indexed_cols;
-        // cudaMalloc((void**) outer_indexed_cols,
-        // outer_table->index_column_size * sizeof(column_type)); for (size_t
-        // idx_i = 0; idx_i < outer_table->index_column_size; idx_i ++) {
-        //     outer_indexed_cols[idx_i] = outer_table->tuples[i *
-        //     outer_table->arity][outer_table->index_columns[idx_i]];
-        // }
         tuple_size_t current_size = 0;
         join_result_size[i] = 0;
         u64 hash_val = prefix_hash(outer_tuple, outer_table->index_column_size);
@@ -224,7 +218,6 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
             }
         }
         join_result_size[i] = current_size;
-        // cudaFree(outer_indexed_cols);
     }
 }
 
@@ -246,13 +239,6 @@ get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
         }
         tuple_type outer_tuple = outer_table->tuples[i];
 
-        // column_type* outer_indexed_cols;
-        // cudaMalloc((void**) outer_indexed_cols,
-        // outer_table->index_column_size * sizeof(column_type)); for (size_t
-        // idx_i = 0; idx_i < outer_table->index_column_size; idx_i ++) {
-        //     outer_indexed_cols[idx_i] = outer_table->tuples[i *
-        //     outer_table->arity][outer_table->index_columns[idx_i]];
-        // }
         int current_new_tuple_cnt = 0;
         u64 hash_val = prefix_hash(outer_tuple, outer_table->index_column_size);
         // the index value "pointer" position in the index hash table
@@ -355,7 +341,7 @@ void Relation::flush_delta(int grid_size, int block_size) {
     tuple_type *tuple_full_buf;
     u64 tuple_full_buf_mem_size = new_full_size * sizeof(tuple_type);
     checkCuda(cudaMalloc((void **)&tuple_full_buf, tuple_full_buf_mem_size));
-    cudaMemset(tuple_full_buf, 0, tuple_full_buf_mem_size);
+    checkCuda(cudaMemset(tuple_full_buf, 0, tuple_full_buf_mem_size));
     checkCuda(cudaDeviceSynchronize());
     tuple_type *end_tuple_full_buf = thrust::merge(
         thrust::device, tuple_full, tuple_full + current_full_size,
@@ -363,7 +349,7 @@ void Relation::flush_delta(int grid_size, int block_size) {
         tuple_indexed_less(delta->index_column_size, delta->arity));
     checkCuda(cudaDeviceSynchronize());
     current_full_size = end_tuple_full_buf - tuple_full_buf;
-    cudaFree(tuple_full);
+    checkCuda(cudaFree(tuple_full));
     tuple_full = tuple_full_buf;
     buffered_delta_vectors.push_back(delta);
     full->tuples = tuple_full;
@@ -404,16 +390,20 @@ void load_relation_container(GHashRelContainer *target, int arity,
         u64 relation_mem_size =
             data_row_size * ((u64)arity) * sizeof(column_type);
         checkCuda(cudaMalloc((void **)&(target->data_raw), relation_mem_size));
-        cudaMemcpy(target->data_raw, data, relation_mem_size,
-                   cudaMemcpyHostToDevice);
+        checkCuda(cudaMemcpy(target->data_raw, data, relation_mem_size,
+                   cudaMemcpyHostToDevice));
     }
     if (tuples_array_flag) {
         // init tuple to be unsorted raw tuple data address
         u64 target_tuples_mem_size = data_row_size * sizeof(tuple_type);
         checkCuda(cudaMalloc((void **)&target->tuples, target_tuples_mem_size));
-        cudaMemset(target->tuples, 0, target_tuples_mem_size);
+        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaMemset(target->tuples, 0, target_tuples_mem_size));
+        // std::cout << "grid size : " << grid_size << "    " << block_size << std::endl;
         init_tuples_unsorted<<<grid_size, block_size>>>(
-            target->tuples, target->data_raw, arity, data_row_size);
+            target->tuples, target->data_raw, arity, data_row_size);    
+        checkCuda(cudaGetLastError());
+        checkCuda(cudaDeviceSynchronize());
     }
     // sort raw data
     if (!sorted_flag) {
@@ -442,22 +432,26 @@ void load_relation_container(GHashRelContainer *target, int arity,
         u64 index_map_mem_size = target->index_map_size * sizeof(MEntity);
         checkCuda(
             cudaMalloc((void **)&(target->index_map), index_map_mem_size));
-        cudaMemset(target->index_map, 0, index_map_mem_size);
+        checkCuda(cudaMemset(target->index_map, 0, index_map_mem_size));
 
         // load inited data struct into GPU memory
         GHashRelContainer *target_device;
         checkCuda(
             cudaMalloc((void **)&target_device, sizeof(GHashRelContainer)));
-        cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
-                   cudaMemcpyHostToDevice);
+        checkCuda(cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
+                   cudaMemcpyHostToDevice));
         init_index_map<<<grid_size, block_size>>>(target_device);
+        checkCuda(cudaGetLastError());
+        checkCuda(cudaDeviceSynchronize());
         // std::cout << "finish init index map" << std::endl;
         // print_hashes(target, "after construct index map");
         // calculate hash
         calculate_index_hash<<<grid_size, block_size>>>(
             target_device,
             tuple_indexed_less(target->index_column_size, target->arity));
-        cudaFree(target_device);
+        checkCuda(cudaGetLastError());
+        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaFree(target_device));
     }
 }
 
@@ -485,16 +479,20 @@ void reload_full_temp(GHashRelContainer *target, int arity, tuple_type *tuples,
     // load inited data struct into GPU memory
     GHashRelContainer *target_device;
     checkCuda(cudaMalloc((void **)&target_device, sizeof(GHashRelContainer)));
-    cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
-               cudaMemcpyHostToDevice);
+    checkCuda(cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
+               cudaMemcpyHostToDevice));
     init_index_map<<<grid_size, block_size>>>(target_device);
+    checkCuda(cudaGetLastError());
+    checkCuda(cudaDeviceSynchronize());
     // std::cout << "finish init index map" << std::endl;
     // print_hashes(target, "after construct index map");
     // calculate hash
     calculate_index_hash<<<grid_size, block_size>>>(
         target_device,
         tuple_indexed_less(target->index_column_size, target->arity));
-    cudaFree(target_device);
+    checkCuda(cudaGetLastError());
+    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaFree(target_device));
 }
 
 void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src,
@@ -520,9 +518,9 @@ void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src,
     free_relation_container(dst);
     checkCuda(cudaMalloc((void **)&dst->data_raw,
                          src->arity * src->tuple_counts * sizeof(column_type)));
-    cudaMemcpy(dst->data_raw, src->data_raw,
+    checkCuda(cudaMemcpy(dst->data_raw, src->data_raw,
                src->arity * src->tuple_counts * sizeof(column_type),
-               cudaMemcpyDeviceToDevice);
+               cudaMemcpyDeviceToDevice));
     load_relation_container(dst, src->arity, dst->data_raw, src->tuple_counts,
                             src->index_column_size, src->dependent_column_size,
                             0.8, grid_size, block_size, true, true, true);
@@ -533,15 +531,15 @@ void free_relation_container(GHashRelContainer *target) {
     target->index_map_size = 0;
     target->data_raw_row_size = 0;
     if (target->index_map != nullptr) {
-        cudaFree(target->index_map);
+        checkCuda(cudaFree(target->index_map));
         target->index_map = nullptr;
     }
     if (target->tuples != nullptr) {
-        cudaFree(target->tuples);
+        checkCuda(cudaFree(target->tuples));
         target->tuples = nullptr;
     }
     if (target->data_raw != nullptr) {
-        cudaFree(target->data_raw);
+        checkCuda(cudaFree(target->data_raw));
         target->data_raw = nullptr;
     }
 }
