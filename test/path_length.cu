@@ -98,6 +98,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     Relation *edge_2__2_1 = new Relation();
     // cudaMallocHost((void **)&edge_2__2_1, sizeof(Relation));
     Relation *path_3__1_2_3 = new Relation();
+    path_3__1_2_3->index_flag = false;
     // cudaMallocHost((void **)&path_3__1_2_3, sizeof(Relation));
     std::cout << "edge size " << graph_edge_counts << std::endl;
     load_relation(path_3__1_2_3, "path_3__1_2_3", 3, raw_path_data,
