@@ -1,0 +1,229 @@
+(
+ slog-prog
+ ((relation-decl rel__value__alias__2__1 value-alias 1 #f 2 (1))
+  (relation-decl rel__value__flow__2__1 value-flow 1 #f 2 (1))
+  (relation-decl rel__value__flow__2__1__2 value-flow 2 #t 2 (1 2))
+  (relation-decl
+   rel___dollorrule7__inter__body__2__2
+   $rule7-inter-body
+   1
+   #f
+   2
+   (2))
+  (relation-decl rel__dereference__2__1__2 dereference 2 #t 2 (1 2))
+  (relation-decl rel__value__flow__2__2 value-flow 1 #f 2 (2))
+  (relation-decl rel__assign__2__2 assign 1 #f 2 (2))
+  (relation-decl rel__assign__2__1__2 assign 2 #t 2 (1 2))
+  (relation-decl rel__value__alias__2__1__2 value-alias 2 #t 2 (1 2))
+  (relation-decl rel__memory__alias__2__1 memory-alias 1 #f 2 (1))
+  (relation-decl rel__memory__alias__2__2 memory-alias 1 #f 2 (2))
+  (relation-decl
+   rel___dollorrule7__inter__body__2__1__2
+   $rule7-inter-body
+   2
+   #t
+   2
+   (1 2))
+  (relation-decl
+   rel___dollorrule10__inter__body__2__1__2
+   $rule10-inter-body
+   2
+   #t
+   2
+   (1 2))
+  (relation-decl rel__dereference__2__1 dereference 1 #f 2 (1))
+  (relation-decl rel__memory__alias__2__1__2 memory-alias 2 #t 2 (1 2))
+  (relation-decl
+   rel___dollorrule10__inter__body__2__2
+   $rule10-inter-body
+   1
+   #f
+   2
+   (2)))
+ ((scc-decl
+   scc0
+   0
+   #f
+   ((scc-rel rel__assign__2__1__2 #f #f)
+    (scc-rel rel__value__flow__2__1__2 #t #f))
+   ((copy rel__value__flow__2__1__2 rel__assign__2__1__2 FULL (1 1))))
+  (scc-decl
+   scc1
+   1
+   #f
+   ((scc-rel rel__assign__2__1__2 #f #f)
+    (scc-rel rel__memory__alias__2__1__2 #t #f))
+   ((copy rel__memory__alias__2__1__2 rel__assign__2__1__2 FULL (1 1))))
+  (scc-decl
+   scc2
+   2
+   #f
+   ((scc-rel rel__assign__2__1__2 #f #f)
+    (scc-rel rel__memory__alias__2__1__2 #t #f))
+   ((copy rel__memory__alias__2__1__2 rel__assign__2__1__2 FULL (0 0))))
+  (scc-decl
+   scc3
+   3
+   #f
+   ((scc-rel rel__assign__2__1__2 #f #f)
+    (scc-rel rel__value__flow__2__1__2 #t #f))
+   ((copy rel__value__flow__2__1__2 rel__assign__2__1__2 FULL (0 1))))
+  (scc-decl
+   scc4
+   4
+   #f
+   ((scc-rel rel__dereference__2__1 #t #f)
+    (scc-rel rel__dereference__2__1__2 #t #f))
+   ((acopy rel__dereference__2__1 rel__dereference__2__1__2 DELTA (0 2 1))))
+  (scc-decl
+   scc5
+   5
+   #f
+   ((scc-rel rel__assign__2__2 #t #f) (scc-rel rel__assign__2__1__2 #t #f))
+   ((acopy rel__assign__2__2 rel__assign__2__1__2 DELTA (1 2 0))))
+  (scc-decl
+   scc6
+   6
+   #f
+   ((scc-rel rel__assign__2__1__2 #f #f)
+    (scc-rel rel__value__flow__2__1__2 #t #f))
+   ((copy rel__value__flow__2__1__2 rel__assign__2__1__2 FULL (0 0))))
+  (scc-decl
+   scc7
+   7
+   #t
+   ((scc-rel rel__value__alias__2__1__2 #t #f)
+    (scc-rel rel__value__alias__2__1 #t #f)
+    (scc-rel rel__value__flow__2__1 #t #f)
+    (scc-rel rel__value__flow__2__1__2 #t #f)
+    (scc-rel rel___dollorrule7__inter__body__2__2 #t #t)
+    (scc-rel rel__value__flow__2__2 #t #f)
+    (scc-rel rel__assign__2__2 #f #f)
+    (scc-rel rel__memory__alias__2__1 #t #f)
+    (scc-rel rel__memory__alias__2__2 #t #f)
+    (scc-rel rel___dollorrule7__inter__body__2__1__2 #t #t)
+    (scc-rel rel___dollorrule10__inter__body__2__1__2 #t #t)
+    (scc-rel rel__dereference__2__1 #f #f)
+    (scc-rel rel__memory__alias__2__1__2 #t #f)
+    (scc-rel rel___dollorrule10__inter__body__2__2 #t #t))
+   ((join
+     rel__value__flow__2__1__2
+     rel__value__flow__2__1
+     DELTA
+     rel__value__flow__2__2
+     DELTA
+     (4 2))
+    (join
+     rel___dollorrule7__inter__body__2__1__2
+     rel__memory__alias__2__2
+     DELTA
+     rel__value__flow__2__1
+     DELTA
+     (4 2))
+    (join
+     rel__value__alias__2__1__2
+     rel__value__flow__2__1
+     DELTA
+     rel__value__flow__2__1
+     FULL
+     (2 4))
+    (acopy
+     rel___dollorrule10__inter__body__2__2
+     rel___dollorrule10__inter__body__2__1__2
+     DELTA
+     (1 2 0))
+    (join
+     rel__value__alias__2__1__2
+     rel__value__flow__2__1
+     FULL
+     rel__value__flow__2__1
+     DELTA
+     (2 4))
+    (acopy rel__value__flow__2__2 rel__value__flow__2__1__2 DELTA (1 2 0))
+    (acopy rel__value__flow__2__1 rel__value__flow__2__1__2 DELTA (0 2 1))
+    (acopy rel__memory__alias__2__1 rel__memory__alias__2__1__2 DELTA (0 2 1))
+    (join
+     rel__value__flow__2__1__2
+     rel__value__flow__2__1
+     DELTA
+     rel__value__flow__2__2
+     FULL
+     (4 2))
+    (join
+     rel__value__alias__2__1__2
+     rel___dollorrule7__inter__body__2__2
+     DELTA
+     rel__value__flow__2__1
+     DELTA
+     (4 2))
+    (join
+     rel__value__alias__2__1__2
+     rel___dollorrule7__inter__body__2__2
+     FULL
+     rel__value__flow__2__1
+     DELTA
+     (4 2))
+    (join
+     rel___dollorrule7__inter__body__2__1__2
+     rel__memory__alias__2__2
+     DELTA
+     rel__value__flow__2__1
+     FULL
+     (4 2))
+    (join
+     rel___dollorrule7__inter__body__2__1__2
+     rel__memory__alias__2__2
+     FULL
+     rel__value__flow__2__1
+     DELTA
+     (4 2))
+    (acopy rel__memory__alias__2__2 rel__memory__alias__2__1__2 DELTA (1 2 0))
+    (acopy rel__value__alias__2__1 rel__value__alias__2__1__2 DELTA (0 2 1))
+    (join
+     rel__value__alias__2__1__2
+     rel___dollorrule7__inter__body__2__2
+     DELTA
+     rel__value__flow__2__1
+     FULL
+     (4 2))
+    (join
+     rel__value__flow__2__1__2
+     rel__value__flow__2__1
+     FULL
+     rel__value__flow__2__2
+     DELTA
+     (4 2))
+    (join
+     rel___dollorrule10__inter__body__2__1__2
+     rel__value__alias__2__1
+     DELTA
+     rel__dereference__2__1
+     FULL
+     (4 2))
+    (acopy
+     rel___dollorrule7__inter__body__2__2
+     rel___dollorrule7__inter__body__2__1__2
+     DELTA
+     (1 2 0))
+    (join
+     rel__value__flow__2__1__2
+     rel__assign__2__2
+     FULL
+     rel__memory__alias__2__1
+     DELTA
+     (2 4))
+    (join
+     rel__value__alias__2__1__2
+     rel__value__flow__2__1
+     DELTA
+     rel__value__flow__2__1
+     DELTA
+     (2 4))
+    (join
+     rel__memory__alias__2__1__2
+     rel__dereference__2__1
+     FULL
+     rel___dollorrule10__inter__body__2__2
+     DELTA
+     (4 2)))))
+ ((0 7) (1 7) (2 7) (3 7) (4 7) (5 7) (6 7)))

@@ -1,13 +1,13 @@
 
 .decl edge(from:number, to:number)
-.input edge(IO=file, filename="../../data/data_3.txt", deliminator="\t")
+.input edge(IO=file, filename="../../data/data_39994.txt", deliminator="\t")
 
 
 
 .decl path(from:number, to:number)
 
 path(from, to) :- edge(from, to).
-path(from, to) :- edge(from, mid), path(mid, to).
+path(from, to) :- path(from, mid), path(mid, to).
 
 .printsize path
 

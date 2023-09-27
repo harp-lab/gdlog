@@ -1,0 +1,15 @@
+.decl domain(x:symbol)
+.input domain
+.decl list(prev:symbol, data:symbol) choice-domain prev, data
+.decl notTotalOrder()
+.printsize notTotalOrder
+
+list("nil", "head").
+list(x,y) :- domain(y), list(_,x).
+
+// every node has only one sucessor.
+notTotalOrder() :- list(p, x), list(p, y), x != y.
+// every node has only one predecessor.
+notTotalOrder() :- list(pa, x), list(pb, x), pa != pb.
+// every node is in the list exactly once.
+notTotalOrder() :- domain(x), !list(x,_), !list(_,x).

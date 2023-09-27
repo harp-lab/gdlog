@@ -1,0 +1,9 @@
+.decl edge(v:symbol, u:symbol)
+edge("L1","L2"). edge("L2","L10"). edge("L2","L3").
+edge("L3","L4"). edge("L4","L8"). edge("L3","L6").
+edge("L6","L8"). edge("L8","L2").
+
+.decl st(v:symbol, u:symbol) choice-domain u
+st("r","L1").
+st(v,u) :- st(_, v), edge(v,u).
+.output st

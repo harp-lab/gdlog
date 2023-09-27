@@ -1,5 +1,7 @@
 build
 .cache
 .vscode
+*/*.csv
+*/**/log
 .idea/
 cmake-build-debug/

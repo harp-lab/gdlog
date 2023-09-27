@@ -1,0 +1,39 @@
+// 2,1
+.decl Assign(src: number, dest: number)
+.input Assign(IO=file, filename="/root/workspace/dataset/httpd/assign.facts", deliminator="\t")
+// 1,2 2,1
+.decl Dereference(src: number, dest: number)
+.input Dereference(IO=file, filename="/root/workspace/dataset/httpd/dereference.facts", deliminator="\t")
+
+//1,2 2,1
+.decl ValueFlow(src: number, dest: number)
+.printsize ValueFlow
+.output ValueFlow
+
+// 1,2 2,1
+.decl ValueAlias(src: number, dest: number)
+.printsize ValueAlias
+.output ValueAlias
+
+// 1,2
+.decl MemoryAlias(src: number, dest: number)
+.printsize MemoryAlias
+
+.decl tmp(src: number, dest: number)
+.printsize tmp
+
+ValueFlow(x, y) :- ValueFlow(x, z), ValueFlow(z, y).
+ValueAlias(x, y) :- ValueFlow(z, x), ValueFlow(z, y).
+ValueFlow(x, y) :- Assign(x, z), MemoryAlias(z, y).
+// tmp(z, x) :- Dereference(y, x), ValueAlias(y, z).
+MemoryAlias(x, w) :- Dereference(y, x), ValueAlias(y, z), Dereference(z, w).
+// MemoryAlias(x, w) :- tmp(z, x), Dereference(z, w).
+ValueAlias(x, y) :- ValueFlow(z, x), MemoryAlias(z, w), ValueFlow(w, y).
+
+
+ValueFlow(y, x) :- Assign(y, x).
+ValueFlow(x, x) :- Assign(x, y).
+ValueFlow(x, x) :- Assign(y, x).
+
+MemoryAlias(x, x) :- Assign(y, x).
+MemoryAlias(x, x) :- Assign(x, y).
