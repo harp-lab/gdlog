@@ -3,3 +3,5 @@ build
 .vscode
 */*.csv
 */**/log
+.idea/
+cmake-build-debug/
