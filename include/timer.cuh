@@ -1,3 +1,13 @@
+/**
+ * @file timer.cuh
+ * @author
+ * @brief time util from Shovon's usenix ATC paper
+ * @version 0.1
+ * @date 2023-09-27
+ *
+ * @copyright Copyright (c) 2023
+ *
+ */
 #pragma once
 #include <cuda_runtime.h>
 

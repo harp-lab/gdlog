@@ -87,39 +87,6 @@ __global__ void shrink_index_map(GHashRelContainer *target,
     }
 }
 
-__global__ void acopy_entry(GHashRelContainer *source,
-                            GHashRelContainer *destination) {
-    auto source_rows = source->index_map_size;
-    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if (index >= source_rows)
-        return;
-
-    int stride = blockDim.x * gridDim.x;
-
-    for (int i = index; i < source_rows; i += stride) {
-        destination->index_map[i].key = source->index_map[i].key;
-        destination->index_map[i].value = source->index_map[i].value;
-    }
-}
-
-__global__ void acopy_data(GHashRelContainer *source,
-                           GHashRelContainer *destination) {
-    auto data_rows = source->tuple_counts;
-    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if (index >= data_rows)
-        return;
-
-    int stride = blockDim.x * gridDim.x;
-
-    for (int i = index; i < data_rows; i += stride) {
-        tuple_type cur_src_tuple = source->tuples[i];
-        for (int j = 0; j < source->arity; j++) {
-            destination->data_raw[i * source->arity + j] = cur_src_tuple[j];
-        }
-        destination->tuples[i] = destination->tuples[i * source->arity];
-    }
-}
-
 __global__ void init_index_map(GHashRelContainer *target) {
     auto source = target->index_map;
     auto source_rows = target->index_map_size;
