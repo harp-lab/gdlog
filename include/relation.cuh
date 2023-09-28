@@ -83,7 +83,8 @@ __global__ void calculate_index_hash(GHashRelContainer *target,
  * @param size return the size
  * @return __global__
  */
-__global__ void count_index_entry_size(GHashRelContainer *target, tuple_size_t *size);
+__global__ void count_index_entry_size(GHashRelContainer *target,
+                                       tuple_size_t *size);
 
 /**
  * @brief rehash to make index map more compact, the new index hash size is
@@ -100,19 +101,6 @@ __global__ void shrink_index_map(GHashRelContainer *target,
                                  tuple_size_t old_index_map_size);
 
 /**
- * @brief acopy the **index** from a relation to another, please use this
- * together with *copy_data*, and settle up all metadata before copy
- *
- * @param source source relation
- * @param destination destination relation
- * @return __global__
- */
-__global__ void acopy_entry(GHashRelContainer *source,
-                            GHashRelContainer *destination);
-__global__ void acopy_data(GHashRelContainer *source,
-                           GHashRelContainer *destination);
-
-/**
  * @brief a CUDA kernel init the index entry map of a hashtabl
  *
  * @param target the hashtable to init
@@ -120,7 +108,17 @@ __global__ void acopy_data(GHashRelContainer *source,
  */
 __global__ void init_index_map(GHashRelContainer *target);
 
-// a helper function to init an unsorted tuple arrary from raw data
+/**
+ * @brief a helper function to init an unsorted tuple arrary from raw data. This
+ * function turn a flatten raw data array into a tuple array contains pointers
+ * to raw data array
+ *
+ * @param tuples result tuple array
+ * @param raw_data flatten raw tuples 1-D array
+ * @param arity arity of reltaion
+ * @param rows tuple number
+ * @return void
+ */
 __global__ void init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
                                      int arity, tuple_size_t rows);
 
@@ -157,15 +155,17 @@ __global__ void
 get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
                 int join_column_counts, tuple_generator_hook tp_gen,
                 int output_arity, column_type *output_raw_data,
-                tuple_size_t *res_count_array, tuple_size_t *res_offset, JoinDirection direction);
+                tuple_size_t *res_count_array, tuple_size_t *res_offset,
+                JoinDirection direction);
 
 __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
-                                        column_type *raw, tuple_size_t tuple_counts,
-                                        int arity);
+                                        column_type *raw,
+                                        tuple_size_t tuple_counts, int arity);
 
 __global__ void get_copy_result(tuple_type *src_tuples,
                                 column_type *dest_raw_data, int output_arity,
-                                tuple_size_t tuple_counts, tuple_copy_hook tp_gen);
+                                tuple_size_t tuple_counts,
+                                tuple_copy_hook tp_gen);
 
 //////////////////////////////////////////////////////
 // CPU functions
@@ -184,15 +184,16 @@ __global__ void get_copy_result(tuple_type *src_tuples,
  * @param block_size
  * @param gpu_data_flag if data is a GPU memory address directly assign to
  * target's data_raw
+ * @param sorted_flag whether input raw data tuples are sorted (use sorted array
+ * will be fasted, avoid extra sorting)
+ * @param build_index_flag whether this relation container need indexing.
  */
-void load_relation_container(GHashRelContainer *target, int arity,
-                             column_type *data, tuple_size_t data_row_size,
-                             tuple_size_t index_column_size, int dependent_column_size,
-                             float index_map_load_factor, int grid_size,
-                             int block_size, bool gpu_data_flag = false,
-                             bool sorted_flag = false,
-                             bool build_index_flag = true,
-                             bool tuples_array_flag = true);
+void load_relation_container(
+    GHashRelContainer *target, int arity, column_type *data,
+    tuple_size_t data_row_size, tuple_size_t index_column_size,
+    int dependent_column_size, float index_map_load_factor, int grid_size,
+    int block_size, bool gpu_data_flag = false, bool sorted_flag = false,
+    bool build_index_flag = true, bool tuples_array_flag = true);
 
 /**
  * @brief copy a relation into an **empty** relation
@@ -203,11 +204,24 @@ void load_relation_container(GHashRelContainer *target, int arity,
 void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src,
                              int grid_size, int block_size);
 
-// this function won't reload raw data in full, just tuple array and index!
+/**
+ * @brief recreate index for a full relation container
+ *
+ * @param target
+ * @param arity
+ * @param tuples
+ * @param data_row_size
+ * @param index_column_size
+ * @param dependent_column_size
+ * @param index_map_load_factor
+ * @param grid_size
+ * @param block_size
+ */
 void reload_full_temp(GHashRelContainer *target, int arity, tuple_type *tuples,
-                      tuple_size_t data_row_size, tuple_size_t index_column_size,
-                      int dependent_column_size, float index_map_load_factor,
-                      int grid_size, int block_size);
+                      tuple_size_t data_row_size,
+                      tuple_size_t index_column_size, int dependent_column_size,
+                      float index_map_load_factor, int grid_size,
+                      int block_size);
 
 /**
  * @brief clean all data in a relation container
@@ -224,8 +238,14 @@ enum MonotonicOrder { DESC, ASC, UNSPEC };
  */
 struct Relation {
     int arity;
+    // the first <index_column_size> columns of a relation will be use to build
+    // relation index, and only indexed columns can be used to join
     int index_column_size;
     std::string name;
+
+    // the last <dependent_column_size> will be used a dependant columns, these
+    // column can be used to store recurisve aggreagtion/choice domain's result,
+    // these columns can't be used as index columns
     int dependent_column_size = 0;
     bool index_flag = true;
 
@@ -233,16 +253,41 @@ struct Relation {
     GHashRelContainer *newt;
     GHashRelContainer *full;
 
+    // TODO: out dataed remove these, directly use GHashRelContainer **full**
     // a buffer for tuple pointer in full
     tuple_size_t current_full_size = 0;
     tuple_type *tuple_full;
+    //
+
+    // delta relation generate in each iteration, all index stripped
     std::vector<GHashRelContainer *> buffered_delta_vectors;
 
+    // reserved properties for monotonic aggregation
     MonotonicOrder monotonic_order = MonotonicOrder::DESC;
 
+    /**
+     * @brief store the data in DELTA into full relation (this won't free delta)
+     *
+     * @param grid_size
+     * @param block_size
+     */
     void flush_delta(int grid_size, int block_size);
 };
 
+/**
+ * @brief load tuples to FULL relation of target relation
+ *
+ * @param target target relation
+ * @param name name of relation
+ * @param arity
+ * @param data raw flatten tuple need loaded into target relation
+ * @param data_row_size number of tuples to load
+ * @param index_column_size number of columns used to index
+ * @param dependent_column_size
+ * @param grid_size
+ * @param block_size
+ */
 void load_relation(Relation *target, std::string name, int arity,
-                   column_type *data, tuple_size_t data_row_size, tuple_size_t index_column_size,
-                   int dependent_column_size, int grid_size, int block_size);
+                   column_type *data, tuple_size_t data_row_size,
+                   tuple_size_t index_column_size, int dependent_column_size,
+                   int grid_size, int block_size);

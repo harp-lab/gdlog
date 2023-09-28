@@ -6,20 +6,33 @@
 
 // function hook describ how inner and outer tuple are reordered to result tuple
 
+/**
+ * @brief Relation Algerbra kernal for JOIN ⋈
+ *
+ */
 struct RelationalJoin {
 
+    // relation to compare, this relation must has index
     Relation *inner_rel;
     RelationVersion inner_ver;
+    // serialized relation, every tuple in this relation will be iterated and
+    // joined with tuples in inner relation
     Relation *outer_rel;
     RelationVersion outer_ver;
 
+    // the relation to store the generated join result
     Relation *output_rel;
+    // hook function will be mapped on every join result tuple
     tuple_generator_hook tuple_generator;
+    // filter to be applied on every join result tuple
     tuple_predicate tuple_pred;
 
+    // TODO: reserved for optimization
     JoinDirection direction;
     int grid_size;
     int block_size;
+
+    // join time for debug and profiling
     float *detail_time;
 
     RelationalJoin(Relation *inner_rel, RelationVersion inner_ver,
@@ -35,6 +48,10 @@ struct RelationalJoin {
     void operator()();
 };
 
+/**
+ * @brief Relation Algerbra kernal for PROJECTION Π
+ *
+ */
 struct RelationalCopy {
     Relation *src_rel;
     RelationVersion src_ver;
@@ -56,10 +73,18 @@ struct RelationalCopy {
     void operator()();
 };
 
+/**
+ * @brief Relation Algebra kernel for sync up different indices of the same
+ * relation. This RA operator must be added in the end of each SCC, it will
+ * directly change the DELTA version of dest relation
+ *
+ */
 struct RelationalACopy {
     Relation *src_rel;
     Relation *dest_rel;
+    // function will be mapped on all tuple copied
     tuple_copy_hook tuple_generator;
+    // filter for copied tuple
     tuple_predicate tuple_pred;
 
     int grid_size;
@@ -75,6 +100,10 @@ struct RelationalACopy {
     void operator()();
 };
 
+/**
+ * @brief possible RA types
+ * 
+ */
 using ra_op = std::variant<RelationalJoin, RelationalCopy, RelationalACopy>;
 
 enum RAtypes { JOIN, COPY, ACOPY };
