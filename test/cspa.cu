@@ -164,7 +164,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     load_relation(memory_alias_2__1_2, "memory_alias_2__1_2", 2, nullptr, 0, 1,
                   0, grid_size, block_size);
     Relation *memory_alias_2__2_1 = new Relation();
-    load_relation(memory_alias_2__2_1, "memory_alias_2__1_2", 2, nullptr, 0, 1,
+    load_relation(memory_alias_2__2_1, "memory_alias_2__2_1", 2, nullptr, 0, 1,
                   0, grid_size, block_size);
 
     timer.start_timer();
@@ -172,6 +172,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     init_scc.add_relations(value_flow_2__1_2, false);
     init_scc.add_relations(value_flow_2__2_1, false);
     init_scc.add_relations(memory_alias_2__1_2, false);
+    init_scc.add_relations(memory_alias_2__2_1, false);
     init_scc.add_relations(assign_2__2_1, true);
     tuple_copy_hook cp_2_1__1_host;
     checkCuda(cudaMemcpyFromSymbol(&cp_2_1__1_host, cp_2_1__1_device,
@@ -205,6 +206,9 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     init_scc.add_ra(RelationalCopy(value_flow_2__1_2, DELTA, value_flow_2__2_1,
                                    cp_2_1__1_2_host, nullptr, grid_size,
                                    block_size));
+    init_scc.add_ra(RelationalCopy(memory_alias_2__1_2, DELTA, memory_alias_2__2_1,
+                                   cp_2_1__1_2_host, nullptr, grid_size,
+                                   block_size));
     init_scc.fixpoint_loop();
 
     timer.stop_timer();
@@ -232,12 +236,8 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     tmp_rel_ma1->index_flag = false;
     load_relation(tmp_rel_ma1, "tmp_rel_ma1", 2, nullptr, 0, 1, 0, grid_size,
                   block_size);
-    Relation *tmp_rel_ma2 = new Relation();
+     Relation *tmp_rel_ma2 = new Relation();
     tmp_rel_ma2->index_flag = false;
-    load_relation(tmp_rel_ma2, "tmp_rel_ma2", 2, nullptr, 0, 1, 0, grid_size,
-                  block_size);
-    
-    Relation *tmp_rel_vmv = new Relation();
     load_relation(tmp_rel_ma2, "tmp_rel_ma2", 2, nullptr, 0, 1, 0, grid_size,
                   block_size);
 
@@ -252,16 +252,11 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     analysis_scc.add_relations(memory_alias_2__1_2, false);
     analysis_scc.add_relations(memory_alias_2__2_1, false);
     analysis_scc.add_relations(value_alias_2__1_2, false);
-    analysis_scc.add_relations(tmp_rel_vmv, false);
-    // analysis_scc.add_relations(value_flow_forward_2__1_2, false);
-    // analysis_scc.add_relations(value_flow_forward_2__2_1, false);
 
     // join order matters for temp!
     analysis_scc.add_tmp_relation(tmp_rel_def);
     analysis_scc.add_tmp_relation(tmp_rel_ma1);
     analysis_scc.add_tmp_relation(tmp_rel_ma2);
-    // analysis_scc.add_tmp_relation(value_flow_2__2_1);
-    // analysis_scc.add_tmp_relation(value_flow_forward_2__2_1);
 
     // join_vf_vfvf: ValueFlow(x, y) :- ValueFlow(x, z), ValueFlow(z, y).
     float join_vf_vfvf_detail_time[3];
@@ -340,14 +335,15 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
         RelationalJoin(value_flow_2__1_2, FULL, tmp_rel_ma1, NEWT,
                        value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
                        grid_size, block_size, join_va_tmp_vf_detail));
+
     float join_va_tmp_vf_detail2[3];
     analysis_scc.add_ra(
-        RelationalJoin(memory_alias_2__1_2, FULL , value_flow_2__1_2, FULL,
+        RelationalJoin(memory_alias_2__2_1, FULL , value_flow_2__1_2, DELTA,
                        tmp_rel_ma2, join_01_11_host, nullptr, LEFT, grid_size,
                        block_size, join_tmp_vf_ma_detail));
      analysis_scc.add_ra(
-        RelationalJoin(value_flow_2__1_2, DELTA, tmp_rel_ma2, NEWT,
-                       value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
+        RelationalJoin(value_flow_2__1_2, FULL, tmp_rel_ma2, NEWT,
+                       value_alias_2__1_2, join_01_11_host, nullptr, LEFT,
                        grid_size, block_size, join_va_tmp_vf_detail));
     // analysis_scc.add_ra(
     //     RelationalJoin(memory_alias_2__2_1, FULL , value_flow_2__1_2, DELTA,
@@ -362,13 +358,15 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
 
 
 
+
+
+
     analysis_scc.add_ra(RelationalACopy(value_flow_2__1_2, value_flow_2__2_1,
                                         cp_2_1__1_2_host, nullptr, grid_size,
                                         block_size));
     analysis_scc.add_ra(RelationalACopy(memory_alias_2__1_2, memory_alias_2__2_1,
                                         cp_2_1__1_2_host, nullptr, grid_size,
                                         block_size));
-
     analysis_scc.fixpoint_loop();
     // print_tuple_rows(value_flow_2__1_2->full, "value_flow_2__1_2");
     timer.stop_timer();
