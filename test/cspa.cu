@@ -101,7 +101,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     int relation_columns = 2;
     std::chrono::high_resolution_clock::time_point time_point_begin;
     std::chrono::high_resolution_clock::time_point time_point_end;
-    time_point_begin = std::chrono::high_resolution_clock::now();
+    
     double spent_time;
 
     // load the input relation
@@ -136,6 +136,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     }
 
     timer.start_timer();
+    
     Relation *assign_2__2_1 = new Relation();
     load_relation(assign_2__2_1, "assign_2__2_1", 2, raw_reverse_assign_data,
                   assign_counts, 1, 0, grid_size, block_size);
@@ -168,6 +169,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
                   0, grid_size, block_size);
 
     timer.start_timer();
+    time_point_begin = std::chrono::high_resolution_clock::now();
     LIE init_scc(grid_size, block_size);
     init_scc.add_relations(value_flow_2__1_2, false);
     init_scc.add_relations(value_flow_2__2_1, false);
@@ -212,7 +214,13 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     init_scc.fixpoint_loop();
 
     timer.stop_timer();
+    time_point_end = std::chrono::high_resolution_clock::now();
     std::cout << "init scc time: " << timer.get_spent_time() << std::endl;
+    std::cout << "init scc time (chono): "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     time_point_end - time_point_begin)
+                     .count()
+              << std::endl;
 
     // scc analysis
     Relation *value_flow_forward_2__1_2 = new Relation();
@@ -367,10 +375,18 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     analysis_scc.add_ra(RelationalACopy(memory_alias_2__1_2, memory_alias_2__2_1,
                                         cp_2_1__1_2_host, nullptr, grid_size,
                                         block_size));
+    time_point_begin = std::chrono::high_resolution_clock::now();
+    timer.start_timer();
     analysis_scc.fixpoint_loop();
     // print_tuple_rows(value_flow_2__1_2->full, "value_flow_2__1_2");
     timer.stop_timer();
+    time_point_end = std::chrono::high_resolution_clock::now();
     std::cout << "analysis scc time: " << timer.get_spent_time() << std::endl;
+    std::cout << "analysis scc time (chono): "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     time_point_end - time_point_begin)
+                     .count()
+              << std::endl;
 }
 
 int main(int argc, char *argv[]) {

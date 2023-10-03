@@ -28,9 +28,9 @@ void RelationalJoin::operator()() {
     int output_arity = output_rel->arity;
     // GHashRelContainer* output = output_rel->newt;
 
-    std::cout << "inner " << inner_rel->name << " : " << inner->tuple_counts
-              << " outer " << outer_rel->name << " : " << outer->tuple_counts
-              << std::endl;
+    // std::cout << "inner " << inner_rel->name << " : " << inner->tuple_counts
+    //           << " outer " << outer_rel->name << " : " << outer->tuple_counts
+    //           << std::endl;
     // print_tuple_rows(inner, "inner");
     // print_tuple_rows(outer, "outer");
     if (outer->tuples == nullptr || outer->tuple_counts == 0) {
@@ -73,9 +73,9 @@ void RelationalJoin::operator()() {
                        result_counts_array + outer->tuple_counts, 0);
 
     checkCuda(cudaDeviceSynchronize());
-    std::cout << output_rel->name << "   " << outer->index_column_size
-              << " join result size(non dedup) " << total_result_rows
-              << std::endl;
+    // std::cout << output_rel->name << "   " << outer->index_column_size
+    //           << " join result size(non dedup) " << total_result_rows
+    //           << std::endl;
     tuple_size_t *result_counts_offset;
     checkCuda(cudaMalloc((void **)&result_counts_offset,
                          outer->tuple_counts * sizeof(tuple_size_t)));
@@ -114,6 +114,9 @@ void RelationalJoin::operator()() {
     // newt don't need index
     if (output_rel->newt->tuples == nullptr ||
         output_rel->newt->tuple_counts == 0) {
+        if (disable_load) {
+            return;
+        }
         load_relation_container(output_rel->newt, output_arity,
                                 join_res_raw_data, total_result_rows,
                                 output_rel->index_column_size,

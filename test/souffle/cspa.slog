@@ -1,0 +1,21 @@
+; ValueFlow(y, x) :- Assign(y, x).
+; ValueFlow(x, y) :- Assign(x, z), MemoryAlias(z, y).
+; ValueFlow(x, y) :- ValueFlow(x, z), ValueFlow(z, y).
+; MemoryAlias(x, w) :- Dereference(y, x), ValueAlias(y, z), Dereference(z, w).
+; ValueAlias(x, y) :- ValueFlow(z, x), ValueFlow(z, y).
+; ValueAlias(x, y) :- ValueFlow(z, x), MemoryAlias(z, w),ValueFlow(w, y).
+; ValueFlow(x, x) :- Assign(x, y).
+; ValueFlow(x, x) :- Assign(y, x).
+; MemoryAlias(x, x) :- Assign(y, x).
+; MemoryAlias(x, x) :- Assign(x, y).
+
+[(value-flow y x) <-- (assign y x)]
+[(value-flow x y) <-- (assign x z) (memory-alias z y)]
+[(value-flow x y) <-- (value-flow x z) (value-flow z y)]
+[(memory-alias x w) <-- (dereference y x) (value-alias y z) -- (dereference z w)]
+[(value-alias x y) <-- (value-flow z x) (value-flow z y)]
+[(value-alias x y) <-- (memory-alias z w) (value-flow w y) -- (value-flow z x)]
+[(value-flow x x) <-- (assign x y)]
+[(value-flow x x) <-- (assign y x)]
+[(memory-alias x x) <-- (assign y x)]
+[(memory-alias x x) <-- (assign x y)]

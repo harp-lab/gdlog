@@ -5,6 +5,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
+#include <thrust/sort.h>
 #include <vector>
 
 #include "../include/exception.cuh"
@@ -54,6 +55,13 @@ column_type *get_relation_from_file(const char *file_path, int total_rows,
     return data;
 }
 
+__device__ void reorder_path(tuple_type inner, tuple_type outer,
+                             tuple_type newt) {
+    newt[0] = inner[1];
+    newt[1] = outer[1];
+};
+__device__ tuple_generator_hook reorder_path_device = reorder_path;
+
 void datastructure_bench(const char *dataset_path, int block_size,
                          int grid_size) {
     KernelTimer timer;
@@ -76,11 +84,70 @@ void datastructure_bench(const char *dataset_path, int block_size,
         raw_reverse_graph_data[i * 2 + 1] = raw_graph_data[i * 2];
         raw_reverse_graph_data[i * 2] = raw_graph_data[i * 2 + 1];
     }
+    column_type *raw_graph_data_gpu;
+    cudaMalloc((void **)&raw_graph_data_gpu,
+               graph_edge_counts * 2 * sizeof(column_type));
+    cudaMemcpy(raw_graph_data_gpu, raw_graph_data,
+               graph_edge_counts * 2 * sizeof(column_type),
+               cudaMemcpyHostToDevice);
+     std::cout << "copied" << std::endl;
+    tuple_type *raw_graph_data_gpu_tuple;
+    cudaMalloc((void **)&raw_graph_data_gpu_tuple,
+               graph_edge_counts * sizeof(tuple_type));
+    init_tuples_unsorted<<<grid_size, block_size>>>(
+        raw_graph_data_gpu_tuple, raw_graph_data_gpu, 2, graph_edge_counts);
+    std::cout << "init unsorted" << std::endl;
+    checkCuda(cudaDeviceSynchronize());
+    thrust::sort(thrust::device, raw_graph_data_gpu_tuple,
+                 raw_graph_data_gpu_tuple + graph_edge_counts,
+                 tuple_indexed_less(1, 2));
+    checkCuda(cudaDeviceSynchronize());
+    column_type *raw_graph_data_gpu_sorted;
+    cudaMalloc((void **)&raw_graph_data_gpu_sorted,
+               graph_edge_counts * 2 * sizeof(column_type));
+    flatten_tuples_raw_data<<<grid_size, block_size>>>(
+        raw_graph_data_gpu_tuple, raw_graph_data_gpu_sorted, graph_edge_counts,
+        2);
     std::cout << "finish reverse graph." << std::endl;
 
+    std::cout << "Testing datastructure build <<<<<<<<<<<<<<< " << std::endl;
     int REPEAT = 100;
-    timer.start_timer();
+    float build_table_time = 0;
+    
     for (int i = 0; i < REPEAT; i++) {
+        Relation *path_2__1_2 = new Relation();
+        path_2__1_2->index_flag = false;
+        // cudaMallocHost((void **)&path_2__1_2, sizeof(Relation));
+        // std::cout << "edge size " << graph_edge_counts << std::endl;
+        // load_relation(path_2__1_2, "path_2__1_2", 2, raw_graph_data,
+        //             graph_edge_counts, 1, 0, grid_size, block_size);
+        path_2__1_2->full = new GHashRelContainer(2, 1, 0);
+        timer.start_timer();
+        load_relation_container(path_2__1_2->full, 2, raw_graph_data_gpu_sorted,
+                                graph_edge_counts, 1, 0, 0.8, grid_size,
+                                block_size, true, true);
+        timer.stop_timer();
+        build_table_time += timer.get_spent_time();
+        // load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
+        //               graph_edge_counts, 1, 0, grid_size, block_size);
+        path_2__1_2->full->tuple_counts = 0;
+        path_2__1_2->full->index_map_size = 0;
+        path_2__1_2->full->data_raw_row_size = 0;
+        if (path_2__1_2->full->index_map != nullptr) {
+            checkCuda(cudaFree(path_2__1_2->full->index_map));
+            path_2__1_2->full->index_map = nullptr;
+        }
+        if (path_2__1_2->full->tuples != nullptr) {
+            checkCuda(cudaFree(path_2__1_2->full->tuples));
+            path_2__1_2->full->tuples = nullptr;
+        }
+    }
+    
+    std::cout << "Graph size: " << graph_edge_counts << std::endl;
+    std::cout << "Build hash table time: " << build_table_time << std::endl;
+    std::cout << "HashTable build ratio : "
+              << graph_edge_counts * REPEAT / build_table_time << std::endl;
+
     Relation *edge_2__2_1 = new Relation();
     // cudaMallocHost((void **)&edge_2__2_1, sizeof(Relation));
     Relation *path_2__1_2 = new Relation();
@@ -89,14 +156,29 @@ void datastructure_bench(const char *dataset_path, int block_size,
     std::cout << "edge size " << graph_edge_counts << std::endl;
     load_relation(path_2__1_2, "path_2__1_2", 2, raw_graph_data,
                   graph_edge_counts, 1, 0, grid_size, block_size);
-    // load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
-    //               graph_edge_counts, 1, 0, grid_size, block_size);
-    free_relation_container(path_2__1_2->full);
+    load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
+                  graph_edge_counts, 1, 0, grid_size, block_size);
+    tuple_generator_hook reorder_path_host;
+    cudaMemcpyFromSymbol(&reorder_path_host, reorder_path_device,
+                         sizeof(tuple_generator_hook));
+    std::cout << "Testing datastructure query <<<<<<<<<<<<<<< " << std::endl;
+    
+    float join_time[3];
+    RelationalJoin join_test(edge_2__2_1, FULL, path_2__1_2, FULL, path_2__1_2,
+                             reorder_path_host, nullptr, LEFT, grid_size,
+                             block_size, join_time);
+    float query_time = 0;
+    for (int i = 0; i < REPEAT; i++) {
+        join_test.disable_load = true;
+        timer.start_timer();
+        join_test();
+        timer.stop_timer();
+        query_time += timer.get_spent_time();
     }
-    timer.stop_timer();
-    // double kernel_spent_time = timer.get_spent_time();
-    std::cout << "Build hash table time: " << timer.get_spent_time()
-              << std::endl;
+
+    std::cout << "Query time: " << query_time << std::endl;
+    std::cout << "HashTable query ratio : "
+              << graph_edge_counts * REPEAT / query_time << std::endl;
 }
 
 int main(int argc, char *argv[]) {
