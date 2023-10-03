@@ -32,6 +32,9 @@ struct RelationalJoin {
     int grid_size;
     int block_size;
 
+    // flag for benchmark, this will disable sorting on result
+    bool disable_load = false;
+
     // join time for debug and profiling
     float *detail_time;
 
