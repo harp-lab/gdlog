@@ -90,13 +90,11 @@ void datastructure_bench(const char *dataset_path, int block_size,
     cudaMemcpy(raw_graph_data_gpu, raw_graph_data,
                graph_edge_counts * 2 * sizeof(column_type),
                cudaMemcpyHostToDevice);
-     std::cout << "copied" << std::endl;
     tuple_type *raw_graph_data_gpu_tuple;
     cudaMalloc((void **)&raw_graph_data_gpu_tuple,
                graph_edge_counts * sizeof(tuple_type));
     init_tuples_unsorted<<<grid_size, block_size>>>(
         raw_graph_data_gpu_tuple, raw_graph_data_gpu, 2, graph_edge_counts);
-    std::cout << "init unsorted" << std::endl;
     checkCuda(cudaDeviceSynchronize());
     thrust::sort(thrust::device, raw_graph_data_gpu_tuple,
                  raw_graph_data_gpu_tuple + graph_edge_counts,
