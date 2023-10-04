@@ -9,7 +9,7 @@
  *
  */
 #pragma once
-#include <cuda_runtime.h>
+// #include <cuda_runtime.h>
 
 struct KernelTimer {
     cudaEvent_t start;
