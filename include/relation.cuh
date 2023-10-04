@@ -192,8 +192,9 @@ void load_relation_container(
     GHashRelContainer *target, int arity, column_type *data,
     tuple_size_t data_row_size, tuple_size_t index_column_size,
     int dependent_column_size, float index_map_load_factor, int grid_size,
-    int block_size, bool gpu_data_flag = false, bool sorted_flag = false,
-    bool build_index_flag = true, bool tuples_array_flag = true);
+    int block_size, float *detail_time, bool gpu_data_flag = false,
+    bool sorted_flag = false, bool build_index_flag = true,
+    bool tuples_array_flag = true);
 
 /**
  * @brief copy a relation into an **empty** relation

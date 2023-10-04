@@ -39,14 +39,18 @@ void LIE::fixpoint_loop() {
     float rebuild_newt_time = 0;
     KernelTimer timer;
 
+    float rebuild_rel_sort_time = 0;
+    float rebuild_rel_unique_time = 0;
+    float rebuild_rel_index_time = 0;
+
     std::cout << "start lie .... " << std::endl;
     // init full tuple buffer for all relation involved
     for (Relation *rel : update_relations) {
         checkCuda(cudaMalloc((void **)&rel->tuple_full,
                              rel->full->tuple_counts * sizeof(tuple_type)));
         checkCuda(cudaMemcpy(rel->tuple_full, rel->full->tuples,
-                   rel->full->tuple_counts * sizeof(tuple_type),
-                   cudaMemcpyDeviceToDevice));
+                             rel->full->tuple_counts * sizeof(tuple_type),
+                             cudaMemcpyDeviceToDevice));
         rel->current_full_size = rel->full->tuple_counts;
         copy_relation_container(rel->delta, rel->full, grid_size, block_size);
         checkCuda(cudaDeviceSynchronize());
@@ -121,7 +125,7 @@ void LIE::fixpoint_loop() {
             checkCuda(cudaMalloc((void **)&deduplicated_newt_tuples,
                                  deduplicated_newt_tuples_mem_size));
             checkCuda(cudaMemset(deduplicated_newt_tuples, 0,
-                       deduplicated_newt_tuples_mem_size));
+                                 deduplicated_newt_tuples_mem_size));
             //////
 
             tuple_type *deuplicated_end = thrust::set_difference(
@@ -147,7 +151,8 @@ void LIE::fixpoint_loop() {
                 deduplicate_size * rel->newt->arity * sizeof(column_type);
             checkCuda(cudaMalloc((void **)&deduplicated_raw,
                                  dedeuplicated_raw_mem_size));
-            checkCuda(cudaMemset(deduplicated_raw, 0, dedeuplicated_raw_mem_size));
+            checkCuda(
+                cudaMemset(deduplicated_raw, 0, dedeuplicated_raw_mem_size));
             flatten_tuples_raw_data<<<grid_size, block_size>>>(
                 deduplicated_newt_tuples, deduplicated_raw, deduplicate_size,
                 rel->newt->arity);
@@ -158,17 +163,21 @@ void LIE::fixpoint_loop() {
             free_relation_container(rel->newt);
 
             timer.start_timer();
+            float load_detail_time[5] = {0, 0, 0, 0, 0};
             rel->delta = new GHashRelContainer(
                 rel->arity, rel->index_column_size, rel->dependent_column_size);
-            load_relation_container(rel->delta, rel->full->arity,
-                                    deduplicated_raw, deduplicate_size,
-                                    rel->full->index_column_size,
-                                    rel->full->dependent_column_size,
-                                    rel->full->index_map_load_factor, grid_size,
-                                    block_size, true, true, true);
+            load_relation_container(
+                rel->delta, rel->full->arity, deduplicated_raw,
+                deduplicate_size, rel->full->index_column_size,
+                rel->full->dependent_column_size,
+                rel->full->index_map_load_factor, grid_size, block_size,
+                load_detail_time, true, true, true);
             checkCuda(cudaDeviceSynchronize());
             timer.stop_timer();
             rebuild_delta_time += timer.get_spent_time();
+            rebuild_rel_sort_time += load_detail_time[0];
+            rebuild_rel_unique_time += load_detail_time[1];
+            rebuild_rel_index_time += load_detail_time[2];
 
             timer.start_timer();
             rel->flush_delta(grid_size, block_size);
@@ -213,12 +222,16 @@ void LIE::fixpoint_loop() {
         checkCuda(cudaGetLastError());
         checkCuda(cudaDeviceSynchronize());
         // cudaFree(tuple_merge_buffer);
+        float load_detail_time[5] = {0, 0, 0, 0, 0};
         load_relation_container(
             rel->full, rel->full->arity, new_full_raw_data,
             rel->current_full_size, rel->full->index_column_size,
             rel->full->dependent_column_size, rel->full->index_map_load_factor,
-            grid_size, block_size, true, true, true);
+            grid_size, block_size, load_detail_time, true, true, true);
         checkCuda(cudaDeviceSynchronize());
+        rebuild_rel_sort_time += load_detail_time[0];
+        rebuild_rel_unique_time += load_detail_time[1];
+        rebuild_rel_index_time += load_detail_time[2];
         std::cout << "Finished! " << rel->name << " has "
                   << rel->full->tuple_counts << std::endl;
         for (auto &delta_b : rel->buffered_delta_vectors) {
@@ -235,4 +248,9 @@ void LIE::fixpoint_loop() {
               << " ; rebuild full time: " << merge_full_time
               << " ; rebuild delta time: " << rebuild_delta_time
               << " ; set diff time: " << set_diff_time << std::endl;
+    std::cout << "Rebuild relation detail time : rebuild rel sort time: "
+              << rebuild_rel_sort_time
+              << " ; rebuild rel unique time: " << rebuild_rel_unique_time
+              << " ; rebuild rel index time: " << rebuild_rel_index_time
+              << std::endl;
 }

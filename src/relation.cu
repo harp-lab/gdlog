@@ -2,6 +2,7 @@
 #include "../include/exception.cuh"
 #include "../include/print.cuh"
 #include "../include/relation.cuh"
+#include "../include/timer.cuh"
 #include <iostream>
 #include <thrust/sort.h>
 #include <thrust/unique.h>
@@ -333,9 +334,10 @@ void load_relation_container(GHashRelContainer *target, int arity,
                              tuple_size_t index_column_size,
                              int dependent_column_size,
                              float index_map_load_factor, int grid_size,
-                             int block_size, bool gpu_data_flag,
-                             bool sorted_flag, bool build_index_flag,
-                             bool tuples_array_flag) {
+                             int block_size, float *detail_time,
+                             bool gpu_data_flag, bool sorted_flag,
+                             bool build_index_flag, bool tuples_array_flag) {
+    KernelTimer timer;
     target->arity = arity;
     target->tuple_counts = data_row_size;
     target->data_raw_row_size = data_row_size;
@@ -358,7 +360,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
             data_row_size * ((u64)arity) * sizeof(column_type);
         checkCuda(cudaMalloc((void **)&(target->data_raw), relation_mem_size));
         checkCuda(cudaMemcpy(target->data_raw, data, relation_mem_size,
-                   cudaMemcpyHostToDevice));
+                             cudaMemcpyHostToDevice));
     }
     if (tuples_array_flag) {
         // init tuple to be unsorted raw tuple data address
@@ -366,30 +368,39 @@ void load_relation_container(GHashRelContainer *target, int arity,
         checkCuda(cudaMalloc((void **)&target->tuples, target_tuples_mem_size));
         checkCuda(cudaDeviceSynchronize());
         checkCuda(cudaMemset(target->tuples, 0, target_tuples_mem_size));
-        // std::cout << "grid size : " << grid_size << "    " << block_size << std::endl;
+        // std::cout << "grid size : " << grid_size << "    " << block_size <<
+        // std::endl;
         init_tuples_unsorted<<<grid_size, block_size>>>(
-            target->tuples, target->data_raw, arity, data_row_size);    
+            target->tuples, target->data_raw, arity, data_row_size);
         checkCuda(cudaGetLastError());
         checkCuda(cudaDeviceSynchronize());
     }
     // sort raw data
     if (!sorted_flag) {
+        timer.start_timer();
         thrust::sort(thrust::device, target->tuples,
                      target->tuples + data_row_size,
                      tuple_indexed_less(index_column_size, arity));
         // print_tuple_rows(target, "after sort");
-
+        checkCuda(cudaDeviceSynchronize());
+        timer.stop_timer();
+        detail_time[0] = timer.get_spent_time();
         // deduplication here?
+        timer.start_timer();
         tuple_type *new_end =
             thrust::unique(thrust::device, target->tuples,
                            target->tuples + data_row_size, t_equal(arity));
+        checkCuda(cudaDeviceSynchronize());
         data_row_size = new_end - target->tuples;
+        timer.stop_timer();
+        detail_time[1] = timer.get_spent_time();
     }
 
     target->tuple_counts = data_row_size;
     // print_tuple_rows(target, "after dedup");
 
     if (build_index_flag) {
+        timer.start_timer();
         // init the index map
         // set the size of index map same as data, (this should give us almost
         // no conflict) however this can be memory inefficient
@@ -406,7 +417,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
         checkCuda(
             cudaMalloc((void **)&target_device, sizeof(GHashRelContainer)));
         checkCuda(cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
-                   cudaMemcpyHostToDevice));
+                             cudaMemcpyHostToDevice));
         init_index_map<<<grid_size, block_size>>>(target_device);
         checkCuda(cudaGetLastError());
         checkCuda(cudaDeviceSynchronize());
@@ -419,6 +430,8 @@ void load_relation_container(GHashRelContainer *target, int arity,
         checkCuda(cudaGetLastError());
         checkCuda(cudaDeviceSynchronize());
         checkCuda(cudaFree(target_device));
+        timer.stop_timer();
+        detail_time[2] = timer.get_spent_time();
     }
 }
 
@@ -447,7 +460,7 @@ void reload_full_temp(GHashRelContainer *target, int arity, tuple_type *tuples,
     GHashRelContainer *target_device;
     checkCuda(cudaMalloc((void **)&target_device, sizeof(GHashRelContainer)));
     checkCuda(cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
-               cudaMemcpyHostToDevice));
+                         cudaMemcpyHostToDevice));
     init_index_map<<<grid_size, block_size>>>(target_device);
     checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
@@ -486,11 +499,13 @@ void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src,
     checkCuda(cudaMalloc((void **)&dst->data_raw,
                          src->arity * src->tuple_counts * sizeof(column_type)));
     checkCuda(cudaMemcpy(dst->data_raw, src->data_raw,
-               src->arity * src->tuple_counts * sizeof(column_type),
-               cudaMemcpyDeviceToDevice));
+                         src->arity * src->tuple_counts * sizeof(column_type),
+                         cudaMemcpyDeviceToDevice));
+    float detail_time[5];
     load_relation_container(dst, src->arity, dst->data_raw, src->tuple_counts,
                             src->index_column_size, src->dependent_column_size,
-                            0.8, grid_size, block_size, true, true, true);
+                            0.8, grid_size, block_size, detail_time, true, true,
+                            true);
 }
 
 void free_relation_container(GHashRelContainer *target) {
@@ -527,8 +542,9 @@ void load_relation(Relation *target, std::string name, int arity,
     target->newt =
         new GHashRelContainer(arity, index_column_size, dependent_column_size);
 
+    float detail_time[5];
     // everything must have a full
     load_relation_container(target->full, arity, data, data_row_size,
                             index_column_size, dependent_column_size, 0.8,
-                            grid_size, block_size);
+                            grid_size, block_size, detail_time);
 }

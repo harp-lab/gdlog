@@ -47,17 +47,17 @@ void RelationalJoin::operator()() {
     GHashRelContainer *inner_device;
     checkCuda(cudaMalloc((void **)&inner_device, sizeof(GHashRelContainer)));
     checkCuda(cudaMemcpy(inner_device, inner, sizeof(GHashRelContainer),
-               cudaMemcpyHostToDevice));
+                         cudaMemcpyHostToDevice));
     GHashRelContainer *outer_device;
     checkCuda(cudaMalloc((void **)&outer_device, sizeof(GHashRelContainer)));
     checkCuda(cudaMemcpy(outer_device, outer, sizeof(GHashRelContainer),
-               cudaMemcpyHostToDevice));
+                         cudaMemcpyHostToDevice));
 
     tuple_size_t *result_counts_array;
     checkCuda(cudaMalloc((void **)&result_counts_array,
                          outer->tuple_counts * sizeof(tuple_size_t)));
     checkCuda(cudaMemset(result_counts_array, 0,
-               outer->tuple_counts * sizeof(tuple_size_t)));
+                         outer->tuple_counts * sizeof(tuple_size_t)));
 
     // print_tuple_rows(outer, "inber");
     checkCuda(cudaDeviceSynchronize());
@@ -67,6 +67,7 @@ void RelationalJoin::operator()() {
                                                     result_counts_array);
     checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
+    this->detail_time[0] += timer.get_spent_time();
 
     tuple_size_t total_result_rows =
         thrust::reduce(thrust::device, result_counts_array,
@@ -80,15 +81,15 @@ void RelationalJoin::operator()() {
     checkCuda(cudaMalloc((void **)&result_counts_offset,
                          outer->tuple_counts * sizeof(tuple_size_t)));
     checkCuda(cudaMemcpy(result_counts_offset, result_counts_array,
-               outer->tuple_counts * sizeof(tuple_size_t),
-               cudaMemcpyDeviceToDevice));
+                         outer->tuple_counts * sizeof(tuple_size_t),
+                         cudaMemcpyDeviceToDevice));
     thrust::exclusive_scan(thrust::device, result_counts_offset,
                            result_counts_offset + outer->tuple_counts,
                            result_counts_offset);
 
     checkCuda(cudaDeviceSynchronize());
     timer.stop_timer();
-    // detail_time[0] = timer.get_spent_time();
+    detail_time[1] += timer.get_spent_time();
 
     timer.start_timer();
     column_type *join_res_raw_data;
@@ -104,11 +105,11 @@ void RelationalJoin::operator()() {
     checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
     timer.stop_timer();
-    // detail_time[1] = timer.get_spent_time();
+    detail_time[2] += timer.get_spent_time();
     checkCuda(cudaFree(result_counts_array));
     checkCuda(cudaFree(result_counts_offset));
 
-    timer.start_timer();
+    float load_relation_container_time[5] = {0, 0, 0, 0, 0};
     // // reload newt
     // free_relation(output_newt);
     // newt don't need index
@@ -117,11 +118,15 @@ void RelationalJoin::operator()() {
         if (disable_load) {
             return;
         }
-        load_relation_container(output_rel->newt, output_arity,
-                                join_res_raw_data, total_result_rows,
-                                output_rel->index_column_size,
-                                output_rel->dependent_column_size, 0.8,
-                                grid_size, block_size, true, false, false);
+        load_relation_container(
+            output_rel->newt, output_arity, join_res_raw_data,
+            total_result_rows, output_rel->index_column_size,
+            output_rel->dependent_column_size, 0.8, grid_size, block_size,
+            load_relation_container_time, true, false, false);
+        checkCuda(cudaDeviceSynchronize());
+        detail_time[3] += load_relation_container_time[0];
+        detail_time[4] += load_relation_container_time[1];
+        detail_time[5] += load_relation_container_time[2];
         // print_tuple_rows(output_rel->newt, "newt after join");
     } else {
         // data in current newt, merge
@@ -132,7 +137,11 @@ void RelationalJoin::operator()() {
         load_relation_container(
             newt_tmp, output_arity, join_res_raw_data, total_result_rows,
             output_rel->index_column_size, output_rel->dependent_column_size,
-            0.8, grid_size, block_size, true, false, false);
+            0.8, grid_size, block_size, load_relation_container_time, true,
+            false, false);
+        detail_time[3] += load_relation_container_time[0];
+        detail_time[4] += load_relation_container_time[1];
+        detail_time[5] += load_relation_container_time[2];
         checkCuda(cudaDeviceSynchronize());
         tuple_type *tp_buffer;
         u64 tp_buffer_mem_size =
@@ -140,6 +149,7 @@ void RelationalJoin::operator()() {
             sizeof(tuple_type);
         checkCuda(cudaMalloc((void **)&tp_buffer, tp_buffer_mem_size));
         cudaMemset(tp_buffer, 0, tp_buffer_mem_size);
+        timer.start_timer();
         tuple_type *tp_buffer_end = thrust::merge(
             thrust::device, newt_tmp->tuples,
             newt_tmp->tuples + newt_tmp->tuple_counts, old_newt->tuples,
@@ -147,14 +157,21 @@ void RelationalJoin::operator()() {
             tuple_indexed_less(output_rel->index_column_size,
                                output_rel->arity));
         checkCuda(cudaDeviceSynchronize());
+        timer.stop_timer();
+        detail_time[6] += timer.get_spent_time();
         // cudaFree(newt_tmp->tuples);
         // cudaFree(old_newt->tuples);
+        timer.start_timer();
         tp_buffer_end = thrust::unique(thrust::device, tp_buffer, tp_buffer_end,
                                        t_equal(output_rel->arity));
         checkCuda(cudaDeviceSynchronize());
+        timer.stop_timer();
+        detail_time[7] += timer.get_spent_time();
         tuple_size_t new_newt_counts = tp_buffer_end - tp_buffer;
         // std::cout << " >>>>>>>>>> " << new_newt_counts * output_rel->arity *
         // sizeof(column_type) << std::endl;
+
+        timer.start_timer();
         column_type *new_newt_raw;
         u64 new_newt_raw_mem_size =
             new_newt_counts * output_rel->arity * sizeof(column_type);
@@ -164,22 +181,26 @@ void RelationalJoin::operator()() {
             tp_buffer, new_newt_raw, new_newt_counts, output_rel->arity);
         checkCuda(cudaGetLastError());
         checkCuda(cudaDeviceSynchronize());
+        timer.stop_timer();
+        detail_time[4] += timer.get_spent_time();
         checkCuda(cudaFree(tp_buffer));
         free_relation_container(old_newt);
         free_relation_container(newt_tmp);
-        load_relation_container(output_rel->newt, output_arity, new_newt_raw,
-                                new_newt_counts, output_rel->index_column_size,
-                                output_rel->dependent_column_size, 0.8,
-                                grid_size, block_size, true, true, false);
+        load_relation_container(
+            output_rel->newt, output_arity, new_newt_raw, new_newt_counts,
+            output_rel->index_column_size, output_rel->dependent_column_size,
+            0.8, grid_size, block_size, load_relation_container_time, true,
+            true, false);
         checkCuda(cudaDeviceSynchronize());
+        detail_time[3] += load_relation_container_time[0];
+        detail_time[4] += load_relation_container_time[1];
+        detail_time[5] += load_relation_container_time[2];
         // print_tuple_rows(output_rel->newt, "join merge newt");
         // delete newt_tmp;
     }
 
     // print_tuple_rows(output_rel->newt, "output_newtr");
-    checkCuda(cudaDeviceSynchronize());
-    timer.stop_timer();
-    // detail_time[2] = timer.get_spent_time();
+    // checkCuda(cudaDeviceSynchronize());
     // std::cout << output_rel->name << " join result size " <<
     // output_rel->newt->tuple_counts <<std::endl;
 

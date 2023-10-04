@@ -121,9 +121,10 @@ void datastructure_bench(const char *dataset_path, int block_size,
         //             graph_edge_counts, 1, 0, grid_size, block_size);
         path_2__1_2->full = new GHashRelContainer(2, 1, 0);
         timer.start_timer();
+        float load_detail_time[5] = {0, 0, 0, 0, 0};
         load_relation_container(path_2__1_2->full, 2, raw_graph_data_gpu_sorted,
                                 graph_edge_counts, 1, 0, 0.8, grid_size,
-                                block_size, true, true);
+                                block_size, load_detail_time, true, true);
         timer.stop_timer();
         build_table_time += timer.get_spent_time();
         // load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
@@ -161,7 +162,7 @@ void datastructure_bench(const char *dataset_path, int block_size,
                          sizeof(tuple_generator_hook));
     std::cout << "Testing datastructure query <<<<<<<<<<<<<<< " << std::endl;
     
-    float join_time[3];
+    float join_time[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
     RelationalJoin join_test(edge_2__2_1, FULL, path_2__1_2, FULL, path_2__1_2,
                              reorder_path_host, nullptr, LEFT, grid_size,
                              block_size, join_time);
