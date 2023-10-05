@@ -7,6 +7,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
+#include <thrust/unique.h>
 
 #include <variant>
 
@@ -45,8 +46,8 @@ void LIE::fixpoint_loop() {
         checkCuda(cudaMalloc((void **)&rel->tuple_full,
                              rel->full->tuple_counts * sizeof(tuple_type)));
         checkCuda(cudaMemcpy(rel->tuple_full, rel->full->tuples,
-                   rel->full->tuple_counts * sizeof(tuple_type),
-                   cudaMemcpyDeviceToDevice));
+                             rel->full->tuple_counts * sizeof(tuple_type),
+                             cudaMemcpyDeviceToDevice));
         rel->current_full_size = rel->full->tuple_counts;
         copy_relation_container(rel->delta, rel->full, grid_size, block_size);
         checkCuda(cudaDeviceSynchronize());
@@ -106,32 +107,33 @@ void LIE::fixpoint_loop() {
                 rel->delta->tuples = nullptr;
             }
 
+            if (rel->dep_pred == nullptr) {
             timer.start_timer();
             if (rel->newt->tuple_counts == 0) {
-                rel->delta =
-                    new GHashRelContainer(rel->arity, rel->index_column_size,
-                                          rel->dependent_column_size);
-                std::cout << "iteration " << iteration_counter << " relation "
-                          << rel->name << " no new tuple added" << std::endl;
+                rel->delta = new GHashRelContainer(
+                    rel->arity, rel->index_column_size,
+                    rel->dependent_column_size);
+                std::cout << "iteration " << iteration_counter
+                            << " relation " << rel->name
+                            << " no new tuple added" << std::endl;
                 continue;
             }
             tuple_type *deduplicated_newt_tuples;
             u64 deduplicated_newt_tuples_mem_size =
                 rel->newt->tuple_counts * sizeof(tuple_type);
             checkCuda(cudaMalloc((void **)&deduplicated_newt_tuples,
-                                 deduplicated_newt_tuples_mem_size));
+                                    deduplicated_newt_tuples_mem_size));
             checkCuda(cudaMemset(deduplicated_newt_tuples, 0,
-                       deduplicated_newt_tuples_mem_size));
-            //////
+                                    deduplicated_newt_tuples_mem_size));
 
             tuple_type *deuplicated_end = thrust::set_difference(
                 thrust::device, rel->newt->tuples,
-                rel->newt->tuples + rel->newt->tuple_counts, rel->tuple_full,
-                rel->tuple_full + rel->current_full_size,
+                rel->newt->tuples + rel->newt->tuple_counts,
+                rel->tuple_full, rel->tuple_full + rel->current_full_size,
                 deduplicated_newt_tuples,
                 tuple_indexed_less(rel->full->index_column_size,
-                                   rel->full->arity -
-                                       rel->dependent_column_size));
+                                    rel->full->arity -
+                                        rel->dependent_column_size));
             checkCuda(cudaDeviceSynchronize());
             tuple_size_t deduplicate_size =
                 deuplicated_end - deduplicated_newt_tuples;
@@ -146,11 +148,12 @@ void LIE::fixpoint_loop() {
             u64 dedeuplicated_raw_mem_size =
                 deduplicate_size * rel->newt->arity * sizeof(column_type);
             checkCuda(cudaMalloc((void **)&deduplicated_raw,
-                                 dedeuplicated_raw_mem_size));
-            checkCuda(cudaMemset(deduplicated_raw, 0, dedeuplicated_raw_mem_size));
+                                    dedeuplicated_raw_mem_size));
+            checkCuda(cudaMemset(deduplicated_raw, 0,
+                                    dedeuplicated_raw_mem_size));
             flatten_tuples_raw_data<<<grid_size, block_size>>>(
-                deduplicated_newt_tuples, deduplicated_raw, deduplicate_size,
-                rel->newt->arity);
+                deduplicated_newt_tuples, deduplicated_raw,
+                deduplicate_size, rel->newt->arity);
             checkCuda(cudaGetLastError());
             checkCuda(cudaDeviceSynchronize());
             checkCuda(cudaFree(deduplicated_newt_tuples));
@@ -158,14 +161,15 @@ void LIE::fixpoint_loop() {
             free_relation_container(rel->newt);
 
             timer.start_timer();
-            rel->delta = new GHashRelContainer(
-                rel->arity, rel->index_column_size, rel->dependent_column_size);
-            load_relation_container(rel->delta, rel->full->arity,
-                                    deduplicated_raw, deduplicate_size,
-                                    rel->full->index_column_size,
-                                    rel->full->dependent_column_size,
-                                    rel->full->index_map_load_factor, grid_size,
-                                    block_size, true, true, true);
+            rel->delta =
+                new GHashRelContainer(rel->arity, rel->index_column_size,
+                                        rel->dependent_column_size);
+            load_relation_container(
+                rel->delta, rel->full->arity, deduplicated_raw,
+                deduplicate_size, rel->full->index_column_size,
+                rel->full->dependent_column_size,
+                rel->full->index_map_load_factor, grid_size, block_size,
+                true, true, true);
             checkCuda(cudaDeviceSynchronize());
             timer.stop_timer();
             rebuild_delta_time += timer.get_spent_time();
@@ -176,11 +180,113 @@ void LIE::fixpoint_loop() {
             merge_time += timer.get_spent_time();
 
             // print_tuple_rows(rel->full, "Path full after load newt");
-            std::cout << "iteration " << iteration_counter << " relation "
-                      << rel->name
-                      << " finish dedup new tuples : " << deduplicate_size
-                      << " delta tuple size: " << rel->delta->tuple_counts
-                      << " full counts " << rel->current_full_size << std::endl;
+            // std::cout << "iteration " << iteration_counter << " relation
+            // "
+            //         << rel->name
+            //         << " finish dedup new tuples : " << deduplicate_size
+            //         << " delta tuple size: " << rel->delta->tuple_counts
+            //         << " full counts " << rel->current_full_size <<
+            //         std::endl;
+            } else {
+                // recursive aggregation
+                // merge newt to full directly
+                tuple_size_t new_full_size =
+                    rel->current_full_size + rel->newt->tuple_counts;
+                // std::cout << new_full_size << std::endl;
+                tuple_type *tuple_full_buf;
+                u64 tuple_full_buf_mem_size =
+                    new_full_size * sizeof(tuple_type);
+                checkCuda(cudaMalloc((void **)&tuple_full_buf,
+                                     tuple_full_buf_mem_size));
+                checkCuda(
+                    cudaMemset(tuple_full_buf, 0, tuple_full_buf_mem_size));
+                checkCuda(cudaDeviceSynchronize());
+
+                tuple_type *end_tuple_full_buf = thrust::merge(
+                    thrust::device, rel->tuple_full,
+                    rel->tuple_full + rel->current_full_size, rel->newt->tuples,
+                    rel->newt->tuples + rel->newt->tuple_counts, tuple_full_buf,
+                    tuple_indexed_less(rel->full->index_column_size,
+                                       rel->full->arity -
+                                           rel->dependent_column_size,
+                                       rel->dep_pred));
+                checkCuda(cudaDeviceSynchronize());
+                // after merge all tuple need aggregation has been gatered
+                // together a full aggregation will be reduce them, but we need
+                // monotonicity, so we use in place unique operation, which
+                // whill keep the first occurence (smallest/largest) of
+                // aggregated tuples sharing the same non-dependent columns
+                tuple_type *deduplicated_tuple_full_buf_end = thrust::unique(
+                    thrust::device, tuple_full_buf, end_tuple_full_buf,
+                    t_equal(rel->full->arity - rel->dependent_column_size));
+                tuple_size_t deduplicated_tuple_full_buf_size =
+                    deduplicated_tuple_full_buf_end - tuple_full_buf;
+                // then propagate the delta by set difference new and old full
+                tuple_type *propogated_delta_tuples;
+                checkCuda(
+                    cudaMalloc((void **)&propogated_delta_tuples,
+                               rel->newt->tuple_counts * sizeof(tuple_type)));
+                tuple_type *propogated_delta_tuples_end =
+                    thrust::set_difference(
+                        thrust::device, tuple_full_buf,
+                        deduplicated_tuple_full_buf_end, rel->tuple_full,
+                        rel->tuple_full + rel->current_full_size,
+                        propogated_delta_tuples,
+                        tuple_indexed_less(rel->full->index_column_size,
+                                           rel->full->arity));
+                column_type *propogated_delta_raw;
+                tuple_size_t propogated_delta_size =
+                    propogated_delta_tuples_end - propogated_delta_tuples;
+                u64 propogated_delta_raw_mem_size = propogated_delta_size *
+                                                    rel->full->arity *
+                                                    sizeof(column_type);
+                checkCuda(cudaMalloc((void **)&propogated_delta_raw,
+                                     propogated_delta_raw_mem_size));
+                flatten_tuples_raw_data<<<grid_size, block_size>>>(
+                    propogated_delta_tuples, propogated_delta_raw,
+                    propogated_delta_size, rel->full->arity);
+                checkCuda(cudaGetLastError());
+                checkCuda(cudaDeviceSynchronize());
+                checkCuda(cudaFree(propogated_delta_tuples));
+                rel->delta =
+                    new GHashRelContainer(rel->arity, rel->index_column_size,
+                                          rel->dependent_column_size);
+                load_relation_container(
+                    rel->delta, rel->full->arity, propogated_delta_raw,
+                    propogated_delta_size, rel->full->index_column_size,
+                    rel->full->dependent_column_size,
+                    rel->full->index_map_load_factor, grid_size, block_size,
+                    true, true, true);
+                rel->buffered_delta_vectors.push_back(rel->delta);
+
+                // reload full, since merge will cause tuple inside newt
+                // inserted into full if don't reload full, can't free newt
+                // this operation need huge buffer for new full
+                rel->current_full_size = deduplicated_tuple_full_buf_size;
+                checkCuda(cudaFree(rel->tuple_full));
+                column_type *new_full_raw_data;
+                u64 new_full_raw_data_mem_size = rel->current_full_size *
+                                                 rel->full->arity *
+                                                 sizeof(column_type);
+                checkCuda(cudaMalloc((void **)&new_full_raw_data,
+                                     new_full_raw_data_mem_size));
+                checkCuda(cudaMemset(new_full_raw_data, 0,
+                                     new_full_raw_data_mem_size));
+                flatten_tuples_raw_data<<<grid_size, block_size>>>(
+                    rel->tuple_full, new_full_raw_data, rel->current_full_size,
+                    rel->full->arity);
+                checkCuda(cudaGetLastError());
+                checkCuda(cudaDeviceSynchronize());
+                free_relation_container(rel->newt);
+                load_relation_container(
+                    rel->full, rel->full->arity, new_full_raw_data,
+                    rel->current_full_size, rel->full->index_column_size,
+                    rel->full->dependent_column_size,
+                    rel->full->index_map_load_factor, grid_size, block_size,
+                    true, true, true);
+                rel->tuple_full = rel->full->tuples;
+                rel->current_full_size = rel->full->tuple_counts;
+            }
         }
         checkCuda(cudaDeviceSynchronize());
         std::cout << "Iteration " << iteration_counter << " finish populating"

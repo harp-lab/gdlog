@@ -20,13 +20,13 @@ using tuple_size_t = u64;
  */
 using t_data_internal = u64 *;
 
-
-typedef void (*tuple_generator_hook) (tuple_type, tuple_type, tuple_type);
-typedef void (*tuple_copy_hook) (tuple_type, tuple_type);
-typedef bool (*tuple_predicate) (tuple_type) ;
+typedef void (*tuple_generator_hook)(tuple_type, tuple_type, tuple_type);
+typedef void (*tuple_copy_hook)(tuple_type, tuple_type);
+typedef bool (*tuple_predicate)(tuple_type);
+typedef bool (*dependency_order)(tuple_type, tuple_type);
 
 // struct tuple_generator_hook {
-//     __host__ __device__ 
+//     __host__ __device__
 //     void operator()(tuple_type inner, tuple_type outer, tuple_type newt) {};
 // };
 
@@ -39,7 +39,8 @@ typedef bool (*tuple_predicate) (tuple_type) ;
  * @return true
  * @return false
  */
-__host__ __device__ inline bool tuple_eq(tuple_type t1, tuple_type t2, tuple_size_t l) {
+__host__ __device__ inline bool tuple_eq(tuple_type t1, tuple_type t2,
+                                         tuple_size_t l) {
     for (int i = 0; i < l; i++) {
         if (t1[i] != t2[i]) {
             return false;
@@ -96,11 +97,14 @@ struct tuple_indexed_less {
     // u64 *index_columns;
     tuple_size_t index_column_size;
     int arity;
+    dependency_order dep_order = nullptr;
 
-    tuple_indexed_less(tuple_size_t index_column_size, int arity) {
+    tuple_indexed_less(tuple_size_t index_column_size, int arity,
+                       dependency_order dep_order = nullptr) {
         // this->index_columns = index_columns;
         this->index_column_size = index_column_size;
         this->arity = arity;
+        this->dep_order = dep_order;
     }
 
     __host__ __device__ bool operator()(const tuple_type &lhs,
@@ -117,6 +121,10 @@ struct tuple_indexed_less {
                 } else if (lhs[i] > rhs[i]) {
                     return false;
                 }
+            }
+            // WARNNING: this may cause array out of bound
+            if (dep_order != nullptr) {
+                return dep_order(lhs+arity, rhs+arity);
             }
             return false;
         } else if (prefix_hash(lhs, index_column_size) <

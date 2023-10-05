@@ -34,6 +34,10 @@ file(GLOB source_cspa
     "${test_dir}/cspa.cu"
 )
 
+file(GLOB source_file_ccomp
+    "${test_dir}/cc.cu"
+)
+
 add_library(gpu_ra "${source_file_gpu_ra}")
 target_compile_features(gpu_ra PUBLIC cxx_std_20)
 set_target_properties(gpu_ra PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
@@ -52,3 +56,8 @@ add_executable(CSPA ${source_cspa})
 target_link_libraries(CSPA gpu_ra)
 target_compile_features(CSPA PUBLIC cxx_std_20)
 set_target_properties(CSPA PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+
+add_executable(CCOMP ${source_file_ccomp})
+target_link_libraries(CCOMP gpu_ra)
+target_compile_features(CCOMP PUBLIC cxx_std_20)
+set_target_properties(CCOMP PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

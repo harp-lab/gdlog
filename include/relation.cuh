@@ -247,6 +247,7 @@ struct Relation {
     // column can be used to store recurisve aggreagtion/choice domain's result,
     // these columns can't be used as index columns
     int dependent_column_size = 0;
+    dependency_order dep_pred = nullptr;
     bool index_flag = true;
 
     GHashRelContainer *delta;
