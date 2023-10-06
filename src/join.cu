@@ -1,3 +1,4 @@
+#include <iostream>
 #include <thrust/execution_policy.h>
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
@@ -127,6 +128,7 @@ void RelationalJoin::operator()() {
             load_relation_container_time, true, false, false);
         } else {
             // temporary relation doesn't need index nor sort
+            // std::cout << "use tmp >>>>>>>>>>>>>>>>>>>>>>>>>>>>>" << std::endl;
             load_relation_container(
                 output_rel->newt, output_arity, join_res_raw_data,
                 total_result_rows, output_rel->index_column_size,

@@ -557,16 +557,18 @@ void load_relation(Relation *target, std::string name, int arity,
     target->arity = arity;
     target->index_column_size = index_column_size;
     target->dependent_column_size = dependent_column_size;
+    target->tmp_flag = tmp_flag;
     target->full =
         new GHashRelContainer(arity, index_column_size, dependent_column_size);
     target->delta =
         new GHashRelContainer(arity, index_column_size, dependent_column_size);
     target->newt =
         new GHashRelContainer(arity, index_column_size, dependent_column_size);
+    // target->newt->tmp_flag = tmp_flag;
 
     float detail_time[5];
     // everything must have a full
     load_relation_container(target->full, arity, data, data_row_size,
                             index_column_size, dependent_column_size, 0.8,
-                            grid_size, block_size, detail_time, tmp_flag);
+                            grid_size, block_size, detail_time);
 }
