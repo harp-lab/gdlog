@@ -1,9 +1,20 @@
-.decl edge(v:symbol, u:symbol)
-edge("L1","L2"). edge("L2","L10"). edge("L2","L3").
-edge("L3","L4"). edge("L4","L8"). edge("L3","L6").
-edge("L6","L8"). edge("L8","L2").
+.decl edge(v: number, u:number)
+.input edge(IO=file, filename="../../data/data_39994.txt", deliminator="\t")
 
-.decl st(v:symbol, u:symbol) choice-domain u
-st("r","L1").
+.decl start_node(v: number)
+// start_node(1).
+start_node(10).
+// start_node(32).
+// start_node(45).
+// start_node(56).
+// start_node(886).
+// start_node(9851).
+// start_node(5682).
+// start_node(3301).
+// start_node(11234).
+// start_node(v) :- edge(v,_).
+
+.decl st(v:number, u:number) choice-domain u
+st(99999999, v) :- start_node(v).
 st(v,u) :- st(_, v), edge(v,u).
 .output st

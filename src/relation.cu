@@ -118,6 +118,8 @@ __global__ void init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
 __global__ void get_join_result_size(GHashRelContainer *inner_table,
                                      GHashRelContainer *outer_table,
                                      int join_column_counts,
+                                     tuple_generator_hook tp_gen,
+                                     tuple_predicate tp_pred,
                                      tuple_size_t *join_result_size) {
     u64 index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= outer_table->tuple_counts)
@@ -168,7 +170,17 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
             //            cur_inner_tuple[0], cur_inner_tuple[1]);
             // }
             if (cmp_res) {
-                current_size++;
+                // hack to apply filter
+                // TODO: this will cause max arity of a relation is 20
+                if (tp_gen != nullptr && tp_pred != nullptr) {
+                    column_type tmp[20] = {0};
+                    (*tp_gen)(cur_inner_tuple, outer_tuple, tmp);
+                    if ((*tp_pred)(tmp)) {
+                        current_size++;
+                    }
+                } else {
+                    current_size++;
+                }
             } else {
 
                 u64 inner_tuple_hash = prefix_hash(
@@ -192,9 +204,9 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
 __global__ void
 get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
                 int join_column_counts, tuple_generator_hook tp_gen,
-                int output_arity, column_type *output_raw_data,
-                tuple_size_t *res_count_array, tuple_size_t *res_offset,
-                JoinDirection direction) {
+                tuple_predicate tp_pred, int output_arity,
+                column_type *output_raw_data, tuple_size_t *res_count_array,
+                tuple_size_t *res_offset, JoinDirection direction) {
     int index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= outer_table->tuple_counts)
         return;
@@ -240,16 +252,26 @@ get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
                     output_raw_data +
                     (res_offset[i] + current_new_tuple_cnt) * output_arity;
 
-                for (int j = 0; j < output_arity; j++) {
+                // for (int j = 0; j < output_arity; j++) {
+                    // TODO: this will cause max arity of a relation is 20
+                if (tp_gen != nullptr && tp_pred != nullptr) {
+                    column_type tmp[20];
+                    (*tp_gen)(inner_tuple, outer_tuple, tmp);
+                    if ((*tp_pred)(tmp)) {
+                        (*tp_gen)(inner_tuple, outer_tuple, new_tuple);
+                        current_new_tuple_cnt++;
+                    }
+                } else {
                     (*tp_gen)(inner_tuple, outer_tuple, new_tuple);
+                    current_new_tuple_cnt++;
+                }
                     // if (output_reorder_array[j] < inner_table->arity) {
                     //     new_tuple[j] = inner_tuple[output_reorder_array[j]];
                     // } else {
                     //     new_tuple[j] = outer_tuple[output_reorder_array[j] -
                     //                                inner_table->arity];
                     // }
-                }
-                current_new_tuple_cnt++;
+                // }
                 if (current_new_tuple_cnt > res_count_array[i]) {
                     break;
                 }

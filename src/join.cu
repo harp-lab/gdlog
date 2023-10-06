@@ -62,9 +62,9 @@ void RelationalJoin::operator()() {
     // print_tuple_rows(outer, "inber");
     checkCuda(cudaDeviceSynchronize());
     timer.start_timer();
-    get_join_result_size<<<grid_size, block_size>>>(inner_device, outer_device,
-                                                    outer->index_column_size,
-                                                    result_counts_array);
+    get_join_result_size<<<grid_size, block_size>>>(
+        inner_device, outer_device, outer->index_column_size, tuple_generator,
+        tuple_pred, result_counts_array);
     checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
     this->detail_time[0] += timer.get_spent_time();
@@ -100,7 +100,7 @@ void RelationalJoin::operator()() {
     checkCuda(cudaMemset(join_res_raw_data, 0, join_res_raw_data_mem_size));
     get_join_result<<<grid_size, block_size>>>(
         inner_device, outer_device, outer->index_column_size, tuple_generator,
-        output_arity, join_res_raw_data, result_counts_array,
+        tuple_pred, output_arity, join_res_raw_data, result_counts_array,
         result_counts_offset, direction);
     checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
