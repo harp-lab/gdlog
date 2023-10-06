@@ -57,11 +57,12 @@ struct GHashRelContainer {
     // tuple_counts when deduplicated
     tuple_size_t data_raw_row_size = 0;
     int arity;
+    bool tmp_flag = false;
 
     GHashRelContainer(int arity, int indexed_column_size,
-                      int dependent_column_size)
+                      int dependent_column_size, bool tmp_flag = false)
         : arity(arity), index_column_size(indexed_column_size),
-          dependent_column_size(dependent_column_size){};
+          dependent_column_size(dependent_column_size), tmp_flag(tmp_flag){};
 };
 
 enum JoinDirection { LEFT, RIGHT };
@@ -251,6 +252,7 @@ struct Relation {
     // these columns can't be used as index columns
     int dependent_column_size = 0;
     bool index_flag = true;
+    bool tmp_flag = false;
 
     GHashRelContainer *delta;
     GHashRelContainer *newt;
@@ -293,4 +295,4 @@ struct Relation {
 void load_relation(Relation *target, std::string name, int arity,
                    column_type *data, tuple_size_t data_row_size,
                    tuple_size_t index_column_size, int dependent_column_size,
-                   int grid_size, int block_size);
+                   int grid_size, int block_size, bool tmp_flag = false);

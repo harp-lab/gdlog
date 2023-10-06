@@ -1,6 +1,6 @@
 
 .decl edge(x: number, y: number)
-.input edge(IO=file, filename="../../data/data_7035.txt", deliminator="\t")
+.input edge(IO=file, filename="../../data/data_39994.txt", deliminator="\t")
 
 .decl sg(x: number, y: number)
 .decl sg_init(x: number, y: number)

@@ -244,11 +244,11 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     Relation *tmp_rel_ma1 = new Relation();
     tmp_rel_ma1->index_flag = false;
     load_relation(tmp_rel_ma1, "tmp_rel_ma1", 2, nullptr, 0, 1, 0, grid_size,
-                  block_size);
+                  block_size, true);
      Relation *tmp_rel_ma2 = new Relation();
     tmp_rel_ma2->index_flag = false;
     load_relation(tmp_rel_ma2, "tmp_rel_ma2", 2, nullptr, 0, 1, 0, grid_size,
-                  block_size);
+                  block_size, true);
 
     LIE analysis_scc(grid_size, block_size);
 

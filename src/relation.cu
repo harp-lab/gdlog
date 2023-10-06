@@ -551,18 +551,20 @@ void free_relation_container(GHashRelContainer *target) {
 void load_relation(Relation *target, std::string name, int arity,
                    column_type *data, tuple_size_t data_row_size,
                    tuple_size_t index_column_size, int dependent_column_size,
-                   int grid_size, int block_size) {
+                   int grid_size, int block_size, bool tmp_flag) {
 
     target->name = name;
     target->arity = arity;
     target->index_column_size = index_column_size;
     target->dependent_column_size = dependent_column_size;
+    target->tmp_flag = tmp_flag;
     target->full =
         new GHashRelContainer(arity, index_column_size, dependent_column_size);
     target->delta =
         new GHashRelContainer(arity, index_column_size, dependent_column_size);
     target->newt =
         new GHashRelContainer(arity, index_column_size, dependent_column_size);
+    // target->newt->tmp_flag = tmp_flag;
 
     float detail_time[5];
     // everything must have a full

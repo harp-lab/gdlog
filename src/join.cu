@@ -1,3 +1,4 @@
+#include <iostream>
 #include <thrust/execution_policy.h>
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
@@ -10,6 +11,7 @@
 
 void RelationalJoin::operator()() {
 
+    bool output_is_tmp = output_rel->tmp_flag;
     GHashRelContainer *inner;
     if (inner_ver == DELTA) {
         inner = inner_rel->delta;
@@ -118,17 +120,29 @@ void RelationalJoin::operator()() {
         if (disable_load) {
             return;
         }
+        if (!output_is_tmp) {
         load_relation_container(
             output_rel->newt, output_arity, join_res_raw_data,
             total_result_rows, output_rel->index_column_size,
             output_rel->dependent_column_size, 0.8, grid_size, block_size,
             load_relation_container_time, true, false, false);
+        } else {
+            // temporary relation doesn't need index nor sort
+            // std::cout << "use tmp >>>>>>>>>>>>>>>>>>>>>>>>>>>>>" << std::endl;
+            load_relation_container(
+                output_rel->newt, output_arity, join_res_raw_data,
+                total_result_rows, output_rel->index_column_size,
+                output_rel->dependent_column_size, 0.8, grid_size, block_size,
+                load_relation_container_time, true, true, false);
+            output_rel->newt->tmp_flag = true;
+        }
         checkCuda(cudaDeviceSynchronize());
         detail_time[3] += load_relation_container_time[0];
         detail_time[4] += load_relation_container_time[1];
         detail_time[5] += load_relation_container_time[2];
         // print_tuple_rows(output_rel->newt, "newt after join");
     } else {
+        // TODO: handle the case out put relation is temp relation
         // data in current newt, merge
         GHashRelContainer *newt_tmp = new GHashRelContainer(
             output_rel->arity, output_rel->index_column_size,
@@ -186,6 +200,7 @@ void RelationalJoin::operator()() {
         checkCuda(cudaFree(tp_buffer));
         free_relation_container(old_newt);
         free_relation_container(newt_tmp);
+        // TODO: free newt_tmp pointer
         load_relation_container(
             output_rel->newt, output_arity, new_newt_raw, new_newt_counts,
             output_rel->index_column_size, output_rel->dependent_column_size,
