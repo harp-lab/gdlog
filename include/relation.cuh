@@ -57,11 +57,12 @@ struct GHashRelContainer {
     // tuple_counts when deduplicated
     tuple_size_t data_raw_row_size = 0;
     int arity;
+    bool tmp_flag = false;
 
     GHashRelContainer(int arity, int indexed_column_size,
-                      int dependent_column_size)
+                      int dependent_column_size, bool tmp_flag = false)
         : arity(arity), index_column_size(indexed_column_size),
-          dependent_column_size(dependent_column_size){};
+          dependent_column_size(dependent_column_size), tmp_flag(tmp_flag){};
 };
 
 enum JoinDirection { LEFT, RIGHT };
@@ -137,6 +138,8 @@ __global__ void init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
 __global__ void get_join_result_size(GHashRelContainer *inner_table,
                                      GHashRelContainer *outer_table,
                                      int join_column_counts,
+                                     tuple_generator_hook tp_gen,
+                                     tuple_predicate tp_pred,
                                      tuple_size_t *join_result_size);
 
 /**
@@ -154,9 +157,9 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
 __global__ void
 get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
                 int join_column_counts, tuple_generator_hook tp_gen,
-                int output_arity, column_type *output_raw_data,
-                tuple_size_t *res_count_array, tuple_size_t *res_offset,
-                JoinDirection direction);
+                tuple_predicate tp_pred, int output_arity,
+                column_type *output_raw_data, tuple_size_t *res_count_array,
+                tuple_size_t *res_offset, JoinDirection direction);
 
 __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
                                         column_type *raw,
@@ -249,6 +252,7 @@ struct Relation {
     // these columns can't be used as index columns
     int dependent_column_size = 0;
     bool index_flag = true;
+    bool tmp_flag = false;
 
     GHashRelContainer *delta;
     GHashRelContainer *newt;
@@ -291,4 +295,4 @@ struct Relation {
 void load_relation(Relation *target, std::string name, int arity,
                    column_type *data, tuple_size_t data_row_size,
                    tuple_size_t index_column_size, int dependent_column_size,
-                   int grid_size, int block_size);
+                   int grid_size, int block_size, bool tmp_flag = false);

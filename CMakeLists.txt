@@ -38,6 +38,10 @@ file(GLOB source_file_datastructure
     "${test_dir}/datastructure.cu"
 )
 
+file(GLOB source_file_sg
+    "${test_dir}/sg.cu"
+)
+
 add_library(gpu_ra "${source_file_gpu_ra}")
 target_compile_features(gpu_ra PUBLIC cxx_std_20)
 set_target_properties(gpu_ra PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
@@ -61,3 +65,8 @@ add_executable(DATASTRUCTURE ${source_file_datastructure})
 target_link_libraries(DATASTRUCTURE gpu_ra)
 target_compile_features(DATASTRUCTURE PUBLIC cxx_std_20)
 set_target_properties(DATASTRUCTURE PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+
+add_executable(SG ${source_file_sg})
+target_link_libraries(SG gpu_ra)
+target_compile_features(SG PUBLIC cxx_std_20)
+set_target_properties(SG PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
