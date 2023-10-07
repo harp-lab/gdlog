@@ -36,6 +36,7 @@ void RelationalACopy::operator()() {
 
     free_relation_container(dest);
     float detail_time[5] = {0, 0, 0, 0, 0};
+    // TODO: swap to repartition_relation_index in future
     load_relation_container(dest, dest->arity, copied_raw_data,
                             src->tuple_counts, src->index_column_size,
                             dest->dependent_column_size, 0.8, grid_size,

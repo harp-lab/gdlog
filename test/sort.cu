@@ -227,6 +227,30 @@ column_type *get_relation_from_file(const char *file_path, int total_rows,
     return data;
 }
 
+// print tuples
+void print_tuple_list(tuple_type *tuples, tuple_size_t rows,
+                      tuple_size_t arity) {
+    tuple_type *tuples_host;
+    cudaMallocHost((void **)&tuples_host, rows * sizeof(tuple_type));
+    cudaMemcpy(tuples_host, tuples, rows * sizeof(tuple_type),
+               cudaMemcpyDeviceToHost);
+    if (rows > 100) {
+        rows = 100;
+    }
+    for (tuple_size_t i = 0; i < rows; i++) {
+        tuple_type cur_tuple = tuples_host[i];
+
+        tuple_type cur_tuple_host;
+        cudaMallocHost((void **)&cur_tuple_host, arity * sizeof(column_type));
+        cudaMemcpy(cur_tuple_host, cur_tuple, arity * sizeof(column_type),
+                   cudaMemcpyDeviceToHost);
+        for (tuple_size_t j = 0; j < arity; j++) {
+            std::cout << cur_tuple_host[j] << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
 // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 // Number of bits per pass
@@ -239,7 +263,7 @@ const int BINS_PER_PASS = 1 << BITS_PER_PASS;
 const int THREADS_PER_BLOCK = 256;
 
 // Radix sort kernel
-__global__ void radix_sort_kernel(int *data, int *temp, int *histogram,
+__global__ void radix_sort_kernel(u32 *data, int *temp, int *histogram,
                                   int num_elements, int pass) {
     // Compute the global thread ID
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -279,21 +303,24 @@ __global__ void radix_sort_kernel(int *data, int *temp, int *histogram,
 }
 
 // Radix sort function
-void radix_sort(int *data, int num_elements) {
+void radix_sort(column_type *data, int arity, int num_elements) {
     // Allocate memory for the temp array and histogram
+    int max_threads_per_block;
+    cudaDeviceGetAttribute(&max_threads_per_block, cudaDevAttrMaxThreadsPerBlock, 0);
     int *temp, *histogram;
     cudaMalloc(&temp, num_elements * sizeof(int));
     cudaMalloc(&histogram, BINS_PER_PASS * THREADS_PER_BLOCK * sizeof(int));
 
     // Initialize the histogram to zero
     cudaMemset(histogram, 0, BINS_PER_PASS * THREADS_PER_BLOCK * sizeof(int));
+    column_type pass_cnt = sizeof(column_type) * 8 * arity / BITS_PER_PASS;
 
     // Perform the radix sort passes
-    for (int pass = 0; pass < sizeof(int) * 8 / BITS_PER_PASS; pass++) {
+    for (column_type pass = 0; pass < pass_cnt; pass++) {
         // Launch the radix sort kernel
         radix_sort_kernel<<<(num_elements + THREADS_PER_BLOCK - 1) /
                                 THREADS_PER_BLOCK,
-                            THREADS_PER_BLOCK>>>(data, temp, histogram,
+                            THREADS_PER_BLOCK>>>(data+arity, temp, histogram,
                                                  num_elements, pass);
 
         // Clear the histogram for the next pass
@@ -320,14 +347,29 @@ __global__ void init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
 
 // cuda kernel compute hash for tuples using fnv1-a
 __global__ void compute_hash(tuple_type *tuples, tuple_size_t rows,
-                             tuple_size_t arity, column_type *hashes) {
+                             tuple_size_t index_column_size,
+                             column_type *hashes) {
     int index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= rows)
         return;
 
     int stride = blockDim.x * gridDim.x;
     for (tuple_size_t i = index; i < rows; i += stride) {
-        hashes[i] = (column_type)prefix_hash_xxhash_32(tuples[i], arity);
+        hashes[i] =
+            (column_type)prefix_hash_xxhash_32(tuples[i], index_column_size);
+    }
+}
+
+// cuda kernel extract the k th column from tuples
+__global__ void extract_column(tuple_type *tuples, tuple_size_t rows,
+                               tuple_size_t k, column_type *column) {
+    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (index >= rows)
+        return;
+
+    int stride = blockDim.x * gridDim.x;
+    for (tuple_size_t i = index; i < rows; i += stride) {
+        column[i] = tuples[i][k];
     }
 }
 
@@ -338,9 +380,11 @@ int main(int argc, char *argv[]) {
     cudaGetDevice(&device_id);
     cudaDeviceGetAttribute(&number_of_sm, cudaDevAttrMultiProcessorCount,
                            device_id);
-    std::cout << "num of sm " << number_of_sm << std::endl;
+    int max_threads_per_block;
+    cudaDeviceGetAttribute(&max_threads_per_block, cudaDevAttrMaxThreadsPerBlock, 0);
+    std::cout << "num of sm " << number_of_sm << " num of thread per block " << max_threads_per_block << std::endl;
     std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
-              << std::endl;
+              << std::endl;;
     int block_size, grid_size;
     block_size = 512;
     grid_size = 32 * number_of_sm;
@@ -375,7 +419,7 @@ int main(int argc, char *argv[]) {
                graph_edge_counts * relation_columns * sizeof(column_type),
                cudaMemcpyHostToDevice);
 
-    int REPEAT = 10;
+    int REPEAT = 1;
     // init the tuples
     tuple_type *tuples;
     cudaMalloc(&tuples, graph_edge_counts * sizeof(tuple_type));
@@ -392,6 +436,8 @@ int main(int argc, char *argv[]) {
     std::cout << "init tuples time: " << spent_time << std::endl;
     column_type *tuple_hashvs;
     cudaMalloc((void **)&tuple_hashvs, graph_edge_counts * sizeof(column_type));
+    column_type *col_tmp;
+    cudaMalloc((void **)&col_tmp, graph_edge_counts * sizeof(column_type));
 
     time_point_end = std::chrono::high_resolution_clock::now();
     // compute hash for tuples
@@ -410,14 +456,30 @@ int main(int argc, char *argv[]) {
     double sort_hash_time = 0;
     for (int i = 0; i < REPEAT; i++) {
         time_point_begin = std::chrono::high_resolution_clock::now();
-        thrust::sort_by_key(thrust::device, tuple_hashvs,
-                            tuple_hashvs + graph_edge_counts, tuples);
+
+        extract_column<<<grid_size, block_size>>>(tuples, graph_edge_counts, 1,
+                                                  col_tmp);
+        cudaDeviceSynchronize();
+        thrust::stable_sort_by_key(thrust::device, col_tmp,
+                                   col_tmp + graph_edge_counts, tuples);
+        cudaDeviceSynchronize();
+        extract_column<<<grid_size, block_size>>>(tuples, graph_edge_counts, 0,
+                                                  col_tmp);
+        cudaDeviceSynchronize();
+        thrust::stable_sort_by_key(thrust::device, col_tmp,
+                                   col_tmp + graph_edge_counts, tuples);
+        compute_hash<<<grid_size, block_size>>>(tuples, graph_edge_counts, 1,
+                                                tuple_hashvs);
+        cudaDeviceSynchronize();
+        thrust::stable_sort_by_key(thrust::device, tuple_hashvs,
+                                   tuple_hashvs + graph_edge_counts, tuples);
         cudaDeviceSynchronize();
         time_point_end = std::chrono::high_resolution_clock::now();
         sort_hash_time +=
             std::chrono::duration_cast<std::chrono::duration<double>>(
                 time_point_end - time_point_begin)
                 .count();
+        print_tuple_list(tuples, graph_edge_counts, 2);
         // recover prepare for next sort
         init_tuples_unsorted<<<grid_size, block_size>>>(
             tuples, d_graph_data, relation_columns, graph_edge_counts);
@@ -436,6 +498,7 @@ int main(int argc, char *argv[]) {
             std::chrono::duration_cast<std::chrono::duration<double>>(
                 time_point_end - time_point_begin)
                 .count();
+        print_tuple_list(tuples, graph_edge_counts, 2);
         init_tuples_unsorted<<<grid_size, block_size>>>(
             tuples, d_graph_data, relation_columns, graph_edge_counts);
     }
