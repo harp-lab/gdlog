@@ -253,7 +253,7 @@ get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
                     (res_offset[i] + current_new_tuple_cnt) * output_arity;
 
                 // for (int j = 0; j < output_arity; j++) {
-                    // TODO: this will cause max arity of a relation is 20
+                // TODO: this will cause max arity of a relation is 20
                 if (tp_gen != nullptr && tp_pred != nullptr) {
                     column_type tmp[20];
                     (*tp_gen)(inner_tuple, outer_tuple, tmp);
@@ -265,12 +265,12 @@ get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
                     (*tp_gen)(inner_tuple, outer_tuple, new_tuple);
                     current_new_tuple_cnt++;
                 }
-                    // if (output_reorder_array[j] < inner_table->arity) {
-                    //     new_tuple[j] = inner_tuple[output_reorder_array[j]];
-                    // } else {
-                    //     new_tuple[j] = outer_tuple[output_reorder_array[j] -
-                    //                                inner_table->arity];
-                    // }
+                // if (output_reorder_array[j] < inner_table->arity) {
+                //     new_tuple[j] = inner_tuple[output_reorder_array[j]];
+                // } else {
+                //     new_tuple[j] = outer_tuple[output_reorder_array[j] -
+                //                                inner_table->arity];
+                // }
                 // }
                 if (current_new_tuple_cnt > res_count_array[i]) {
                     break;
@@ -400,11 +400,17 @@ void load_relation_container(GHashRelContainer *target, int arity,
     // sort raw data
     if (!sorted_flag) {
         timer.start_timer();
-        thrust::sort(thrust::device, target->tuples,
-                     target->tuples + data_row_size,
-                     tuple_indexed_less(index_column_size, arity));
+        if (arity <= RADIX_SORT_THRESHOLD) {
+            sort_tuples(target->tuples, data_row_size, arity, index_column_size,
+                        grid_size, block_size);
+        } else {
+            thrust::sort(thrust::device, target->tuples,
+                         target->tuples + data_row_size,
+                         tuple_indexed_less(index_column_size, arity));
+            
+            checkCuda(cudaDeviceSynchronize());
+        }
         // print_tuple_rows(target, "after sort");
-        checkCuda(cudaDeviceSynchronize());
         timer.stop_timer();
         detail_time[0] = timer.get_spent_time();
         // deduplication here?
@@ -416,6 +422,10 @@ void load_relation_container(GHashRelContainer *target, int arity,
         data_row_size = new_end - target->tuples;
         timer.stop_timer();
         detail_time[1] = timer.get_spent_time();
+        if (arity <= RADIX_SORT_THRESHOLD) {
+            sort_tuple_by_hash(target->tuples, data_row_size, arity,
+                               index_column_size, grid_size, block_size);
+        }
     }
 
     target->tuple_counts = data_row_size;
@@ -455,6 +465,98 @@ void load_relation_container(GHashRelContainer *target, int arity,
         timer.stop_timer();
         detail_time[2] = timer.get_spent_time();
     }
+}
+
+void repartition_relation_index(GHashRelContainer *target, int arity,
+                                column_type *data, tuple_size_t data_row_size,
+                                tuple_size_t index_column_size,
+                                int dependent_column_size,
+                                float index_map_load_factor, int grid_size,
+                                int block_size, float *detail_time) {
+    KernelTimer timer;
+    target->arity = arity;
+    target->tuple_counts = data_row_size;
+    target->data_raw_row_size = data_row_size;
+    target->index_map_load_factor = index_map_load_factor;
+    target->index_column_size = index_column_size;
+    target->dependent_column_size = dependent_column_size;
+    // load index selection into gpu
+    // u64 index_columns_mem_size = index_column_size * sizeof(u64);
+    // checkCuda(cudaMalloc((void**) &(target->index_columns),
+    // index_columns_mem_size)); cudaMemcpy(target->index_columns,
+    // index_columns, index_columns_mem_size, cudaMemcpyHostToDevice);
+    if (data_row_size == 0) {
+        return;
+    }
+    // load raw data from host
+    target->data_raw = data;
+    // init tuple to be unsorted raw tuple data address
+    u64 target_tuples_mem_size = data_row_size * sizeof(tuple_type);
+    checkCuda(cudaMalloc((void **)&target->tuples, target_tuples_mem_size));
+    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaMemset(target->tuples, 0, target_tuples_mem_size));
+    // std::cout << "grid size : " << grid_size << "    " << block_size <<
+    // std::endl;
+    init_tuples_unsorted<<<grid_size, block_size>>>(
+        target->tuples, target->data_raw, arity, data_row_size);
+    checkCuda(cudaGetLastError());
+    checkCuda(cudaDeviceSynchronize());
+
+    timer.start_timer();
+    if (arity <= RADIX_SORT_THRESHOLD) {
+        sort_tuples(target->tuples, data_row_size, index_column_size, index_column_size,
+                    grid_size, block_size);
+    } else {
+        thrust::sort(thrust::device, target->tuples,
+                        target->tuples + data_row_size,
+                        tuple_indexed_less(index_column_size, arity));
+        
+        checkCuda(cudaDeviceSynchronize());
+    }
+    // print_tuple_rows(target, "after sort");
+    timer.stop_timer();
+    detail_time[0] = timer.get_spent_time();
+    detail_time[1] = timer.get_spent_time();
+    if (arity <= RADIX_SORT_THRESHOLD) {
+        sort_tuple_by_hash(target->tuples, data_row_size, arity,
+                            index_column_size, grid_size, block_size);
+    }
+
+    target->tuple_counts = data_row_size;
+    // print_tuple_rows(target, "after dedup");
+
+    timer.start_timer();
+    // init the index map
+    // set the size of index map same as data, (this should give us almost
+    // no conflict) however this can be memory inefficient
+    target->index_map_size =
+        std::ceil(data_row_size / index_map_load_factor);
+    // target->index_map_size = data_row_size;
+    u64 index_map_mem_size = target->index_map_size * sizeof(MEntity);
+    checkCuda(
+        cudaMalloc((void **)&(target->index_map), index_map_mem_size));
+    checkCuda(cudaMemset(target->index_map, 0, index_map_mem_size));
+
+    // load inited data struct into GPU memory
+    GHashRelContainer *target_device;
+    checkCuda(
+        cudaMalloc((void **)&target_device, sizeof(GHashRelContainer)));
+    checkCuda(cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
+                            cudaMemcpyHostToDevice));
+    init_index_map<<<grid_size, block_size>>>(target_device);
+    checkCuda(cudaGetLastError());
+    checkCuda(cudaDeviceSynchronize());
+    // std::cout << "finish init index map" << std::endl;
+    // print_hashes(target, "after construct index map");
+    // calculate hash
+    calculate_index_hash<<<grid_size, block_size>>>(
+        target_device,
+        tuple_indexed_less(target->index_column_size, target->arity));
+    checkCuda(cudaGetLastError());
+    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaFree(target_device));
+    timer.stop_timer();
+    detail_time[2] = timer.get_spent_time();
 }
 
 void reload_full_temp(GHashRelContainer *target, int arity, tuple_type *tuples,

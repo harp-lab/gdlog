@@ -3,6 +3,10 @@
 #include <string>
 #include <vector>
 
+#ifndef RADIX_SORT_THRESHOLD
+#define RADIX_SORT_THRESHOLD 3
+#endif
+
 enum RelationVersion { DELTA, FULL, NEWT };
 
 /**
@@ -199,6 +203,13 @@ void load_relation_container(
     bool sorted_flag = false, bool build_index_flag = true,
     bool tuples_array_flag = true);
 
+void repartition_relation_index(GHashRelContainer *target, int arity,
+                                column_type *data, tuple_size_t data_row_size,
+                                tuple_size_t index_column_size,
+                                int dependent_column_size,
+                                float index_map_load_factor, int grid_size,
+                                int block_size, float *detail_time);
+
 /**
  * @brief copy a relation into an **empty** relation
  *
@@ -242,14 +253,14 @@ enum MonotonicOrder { DESC, ASC, UNSPEC };
  */
 struct Relation {
     int arity;
-    // the first <index_column_size> columns of a relation will be use to build
-    // relation index, and only indexed columns can be used to join
+    // the first <index_column_size> columns of a relation will be use to
+    // build relation index, and only indexed columns can be used to join
     int index_column_size;
     std::string name;
 
-    // the last <dependent_column_size> will be used a dependant columns, these
-    // column can be used to store recurisve aggreagtion/choice domain's result,
-    // these columns can't be used as index columns
+    // the last <dependent_column_size> will be used a dependant columns,
+    // these column can be used to store recurisve aggreagtion/choice
+    // domain's result, these columns can't be used as index columns
     int dependent_column_size = 0;
     bool index_flag = true;
     bool tmp_flag = false;
@@ -258,8 +269,8 @@ struct Relation {
     GHashRelContainer *newt;
     GHashRelContainer *full;
 
-    // TODO: out dataed remove these, directly use GHashRelContainer **full**
-    // a buffer for tuple pointer in full
+    // TODO: out dataed remove these, directly use GHashRelContainer
+    // **full** a buffer for tuple pointer in full
     tuple_size_t current_full_size = 0;
     tuple_type *tuple_full;
     //
@@ -271,7 +282,8 @@ struct Relation {
     MonotonicOrder monotonic_order = MonotonicOrder::DESC;
 
     /**
-     * @brief store the data in DELTA into full relation (this won't free delta)
+     * @brief store the data in DELTA into full relation (this won't free
+     * delta)
      *
      * @param grid_size
      * @param block_size

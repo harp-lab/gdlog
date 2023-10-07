@@ -20,13 +20,12 @@ using tuple_size_t = u64;
  */
 using t_data_internal = u64 *;
 
-
-typedef void (*tuple_generator_hook) (tuple_type, tuple_type, tuple_type);
-typedef void (*tuple_copy_hook) (tuple_type, tuple_type);
-typedef bool (*tuple_predicate) (tuple_type) ;
+typedef void (*tuple_generator_hook)(tuple_type, tuple_type, tuple_type);
+typedef void (*tuple_copy_hook)(tuple_type, tuple_type);
+typedef bool (*tuple_predicate)(tuple_type);
 
 // struct tuple_generator_hook {
-//     __host__ __device__ 
+//     __host__ __device__
 //     void operator()(tuple_type inner, tuple_type outer, tuple_type newt) {};
 // };
 
@@ -39,7 +38,8 @@ typedef bool (*tuple_predicate) (tuple_type) ;
  * @return true
  * @return false
  */
-__host__ __device__ inline bool tuple_eq(tuple_type t1, tuple_type t2, tuple_size_t l) {
+__host__ __device__ inline bool tuple_eq(tuple_type t1, tuple_type t2,
+                                         tuple_size_t l) {
     for (int i = 0; i < l; i++) {
         if (t1[i] != t2[i]) {
             return false;
@@ -71,19 +71,19 @@ struct t_equal {
  * @param prefix_len
  * @return __host__ __device__
  */
-__host__ __device__ inline u64 prefix_hash(tuple_type start_ptr,
-                                           u64 prefix_len) {
-    const u64 base = 14695981039346656037ULL;
-    const u64 prime = 1099511628211ULL;
+__host__ __device__ inline column_type prefix_hash(tuple_type start_ptr,
+                                                   column_type prefix_len) {
+    const column_type base = 2166136261U;
+    const column_type prime = 16777619U;
 
-    u64 hash = base;
-    for (u64 i = 0; i < prefix_len; ++i) {
-        u64 chunk = start_ptr[i];
-        hash ^= chunk & 255ULL;
+    column_type hash = base;
+    for (column_type i = 0; i < prefix_len; ++i) {
+        column_type chunk = (column_type)start_ptr[i];
+        hash ^= chunk & 255U;
         hash *= prime;
-        for (char j = 0; j < 7; ++j) {
+        for (char j = 0; j < 3; ++j) {
             chunk = chunk >> 8;
-            hash ^= chunk & 255ULL;
+            hash ^= chunk & 255U;
             hash *= prime;
         }
     }
@@ -147,3 +147,18 @@ struct tuple_weak_less {
         return false;
     };
 };
+
+// cuda kernel extract the k th column from tuples
+__global__ void extract_column(tuple_type *tuples, tuple_size_t rows,
+                               tuple_size_t k, column_type *column);
+
+__global__ void compute_hash(tuple_type *tuples, tuple_size_t rows,
+                             tuple_size_t index_column_size,
+                             column_type *hashes);
+
+void sort_tuples(tuple_type *tuples, tuple_size_t rows, tuple_size_t arity,
+                 tuple_size_t index_column_size, int grid_size, int block_size);
+
+void sort_tuple_by_hash(tuple_type *tuples, tuple_size_t rows,
+                        tuple_size_t arity, tuple_size_t index_column_size,
+                        int grid_size, int block_size);
