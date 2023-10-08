@@ -3,6 +3,7 @@
 #include "../include/print.cuh"
 #include "../include/relation.cuh"
 #include "../include/timer.cuh"
+#include "../include/tuple.cuh"
 #include <iostream>
 #include <thrust/sort.h>
 #include <thrust/unique.h>
@@ -28,8 +29,31 @@ __global__ void calculate_index_hash(GHashRelContainer *target,
                                          EMPTY_HASH_ENTRY, hash_val);
             tuple_size_t existing_value = target->index_map[position].value;
             if (existing_key == EMPTY_HASH_ENTRY || existing_key == hash_val) {
+                bool collison_flag = false;
                 while (true) {
-                    if (existing_value <= i) {
+                    if (existing_value < i) {
+                        // occupied entry, but no need for swap, just check if collision
+                        if (!tuple_eq(target->tuples[existing_value], cur_tuple, target->index_column_size)) {
+                            // collision, find nex available entry
+                            collison_flag = true;
+                            break;
+                        } else {
+                            // no collision but existing tuple is smaller, in this case, not need to swap, just return(break; break)
+                            break;
+                        }
+                    }
+                    if (existing_value > i && existing_value != EMPTY_HASH_ENTRY) {
+                        // occupied entry, may need for swap
+                        if (!tuple_eq(target->tuples[existing_value], cur_tuple, target->index_column_size)) {
+                            // collision, find nex available entry
+                            collison_flag = true;
+                            break;
+                        }
+                        // else, swap
+                    }
+                    // swap value
+                    if (existing_value == i) {
+                        // swap success return
                         break;
                     } else {
                         // need swap
@@ -38,7 +62,9 @@ __global__ void calculate_index_hash(GHashRelContainer *target,
                                       existing_value, i);
                     }
                 }
-                break;
+                if(!collison_flag){
+                    break;
+                }
             }
 
             position = (position + 1) % target->index_map_size;
@@ -134,20 +160,23 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
         u64 hash_val = prefix_hash(outer_tuple, outer_table->index_column_size);
         // the index value "pointer" position in the index hash table
         tuple_size_t index_position = hash_val % inner_table->index_map_size;
-        // 64 bit hash is less likely to have collision
-        // partially solve hash conflict? maybe better for performance
-        bool hash_not_exists = false;
+        bool index_not_exists = false;
         while (true) {
-            if (inner_table->index_map[index_position].key == hash_val) {
+            if (inner_table->index_map[index_position].key == hash_val &&
+                tuple_eq(
+                    outer_tuple,
+                    inner_table
+                        ->tuples[inner_table->index_map[index_position].value],
+                    outer_table->index_column_size)) {
                 break;
             } else if (inner_table->index_map[index_position].key ==
                        EMPTY_HASH_ENTRY) {
-                hash_not_exists = true;
+                index_not_exists = true;
                 break;
             }
             index_position = (index_position + 1) % inner_table->index_map_size;
         }
-        if (hash_not_exists) {
+        if (index_not_exists) {
             continue;
         }
         // pull all joined elements
@@ -182,14 +211,7 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
                     current_size++;
                 }
             } else {
-
-                u64 inner_tuple_hash = prefix_hash(
-                    cur_inner_tuple, inner_table->index_column_size);
-                if (inner_tuple_hash != hash_val) {
-                    // bucket end
-                    break;
-                }
-                // collision, keep searching
+                break;
             }
             position = position + 1;
             if (position > inner_table->tuple_counts - 1) {
@@ -407,7 +429,6 @@ void load_relation_container(GHashRelContainer *target, int arity,
             thrust::sort(thrust::device, target->tuples,
                          target->tuples + data_row_size,
                          tuple_indexed_less(index_column_size, arity));
-            
             checkCuda(cudaDeviceSynchronize());
         }
         // print_tuple_rows(target, "after sort");
@@ -422,10 +443,6 @@ void load_relation_container(GHashRelContainer *target, int arity,
         data_row_size = new_end - target->tuples;
         timer.stop_timer();
         detail_time[1] = timer.get_spent_time();
-        if (arity <= RADIX_SORT_THRESHOLD) {
-            sort_tuple_by_hash(target->tuples, data_row_size, arity,
-                               index_column_size, grid_size, block_size);
-        }
     }
 
     target->tuple_counts = data_row_size;
@@ -504,13 +521,13 @@ void repartition_relation_index(GHashRelContainer *target, int arity,
 
     timer.start_timer();
     if (arity <= RADIX_SORT_THRESHOLD) {
-        sort_tuples(target->tuples, data_row_size, index_column_size, index_column_size,
-                    grid_size, block_size);
+        sort_tuples(target->tuples, data_row_size, index_column_size,
+                    index_column_size, grid_size, block_size);
     } else {
         thrust::sort(thrust::device, target->tuples,
-                        target->tuples + data_row_size,
-                        tuple_indexed_less(index_column_size, arity));
-        
+                     target->tuples + data_row_size,
+                     tuple_indexed_less(index_column_size, arity));
+
         checkCuda(cudaDeviceSynchronize());
     }
     // print_tuple_rows(target, "after sort");
@@ -519,7 +536,7 @@ void repartition_relation_index(GHashRelContainer *target, int arity,
     detail_time[1] = timer.get_spent_time();
     if (arity <= RADIX_SORT_THRESHOLD) {
         sort_tuple_by_hash(target->tuples, data_row_size, arity,
-                            index_column_size, grid_size, block_size);
+                           index_column_size, grid_size, block_size);
     }
 
     target->tuple_counts = data_row_size;
@@ -529,20 +546,17 @@ void repartition_relation_index(GHashRelContainer *target, int arity,
     // init the index map
     // set the size of index map same as data, (this should give us almost
     // no conflict) however this can be memory inefficient
-    target->index_map_size =
-        std::ceil(data_row_size / index_map_load_factor);
+    target->index_map_size = std::ceil(data_row_size / index_map_load_factor);
     // target->index_map_size = data_row_size;
     u64 index_map_mem_size = target->index_map_size * sizeof(MEntity);
-    checkCuda(
-        cudaMalloc((void **)&(target->index_map), index_map_mem_size));
+    checkCuda(cudaMalloc((void **)&(target->index_map), index_map_mem_size));
     checkCuda(cudaMemset(target->index_map, 0, index_map_mem_size));
 
     // load inited data struct into GPU memory
     GHashRelContainer *target_device;
-    checkCuda(
-        cudaMalloc((void **)&target_device, sizeof(GHashRelContainer)));
+    checkCuda(cudaMalloc((void **)&target_device, sizeof(GHashRelContainer)));
     checkCuda(cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
-                            cudaMemcpyHostToDevice));
+                         cudaMemcpyHostToDevice));
     init_index_map<<<grid_size, block_size>>>(target_device);
     checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
