@@ -77,3 +77,6 @@ target_compile_features(SG PUBLIC cxx_std_20)
 set_target_properties(SG PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 add_executable(TEST ${source_file_test})
+target_link_libraries(TEST gpu_ra)
+target_compile_features(TEST PUBLIC cxx_std_20)
+set_target_properties(TEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

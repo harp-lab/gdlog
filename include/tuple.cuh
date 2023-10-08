@@ -108,23 +108,15 @@ struct tuple_indexed_less {
         // fetch the index
         // compare hash first, could be index very different but share the same
         // hash
-        if (prefix_hash(lhs, index_column_size) ==
-            prefix_hash(rhs, index_column_size)) {
-            // same hash
-            for (tuple_size_t i = 0; i < arity; i++) {
-                if (lhs[i] < rhs[i]) {
-                    return true;
-                } else if (lhs[i] > rhs[i]) {
-                    return false;
-                }
+        // same hash
+        for (tuple_size_t i = 0; i < arity; i++) {
+            if (lhs[i] < rhs[i]) {
+                return true;
+            } else if (lhs[i] > rhs[i]) {
+                return false;
             }
-            return false;
-        } else if (prefix_hash(lhs, index_column_size) <
-                   prefix_hash(rhs, index_column_size)) {
-            return true;
-        } else {
-            return false;
         }
+        return false;
     }
 };
 
