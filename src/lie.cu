@@ -200,7 +200,7 @@ void LIE::fixpoint_loop() {
         //     break;
         // }
 
-        if (fixpoint_flag) {
+        if (fixpoint_flag || iteration_counter > max_iteration) {
             break;
         }
     }

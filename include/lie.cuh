@@ -1,5 +1,6 @@
 #pragma once
 #include "relational_algebra.cuh"
+#include <climits>
 #include <vector>
 
 /**
@@ -26,6 +27,7 @@ struct LIE {
     int block_size;
 
     bool reload_full_flag = true;
+    int max_iteration = INT_MAX;
 
     LIE(int grid_size, int block_size)
         : grid_size(grid_size), block_size(block_size) {}
