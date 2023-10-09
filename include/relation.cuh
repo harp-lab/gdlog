@@ -4,7 +4,7 @@
 #include <vector>
 
 #ifndef RADIX_SORT_THRESHOLD
-#define RADIX_SORT_THRESHOLD 3
+#define RADIX_SORT_THRESHOLD 0
 #endif
 
 enum RelationVersion { DELTA, FULL, NEWT };
@@ -21,7 +21,7 @@ struct MEntity {
     tuple_size_t value;
 };
 
-#define EMPTY_HASH_ENTRY ULLONG_MAX
+#define EMPTY_HASH_ENTRY ULONG_MAX
 /**
  * @brief a C-style hashset indexing based relation container.
  *        Actual data is still stored using sorted set.

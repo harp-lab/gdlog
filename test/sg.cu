@@ -145,7 +145,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
 
     LIE sg_lie(grid_size, block_size);
     Relation *tmp = new Relation();
-    load_relation(tmp, "tmp", 2, nullptr, 0, 1, 0, grid_size, block_size, true);
+    load_relation(tmp, "tmp", 2, nullptr, 0, 1, 0, grid_size, block_size);
     tmp->index_flag = false;
     sg_lie.add_relations(edge_2__1_2, true);
     sg_lie.add_relations(sg_2__1_2, false);

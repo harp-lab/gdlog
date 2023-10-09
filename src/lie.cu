@@ -206,6 +206,7 @@ void LIE::fixpoint_loop() {
     }
     // merge full after reach fixpoint
     timer.start_timer();
+    if (reload_full_flag) {
     for (Relation *rel : update_relations) {
         // if (rel->current_full_size <= rel->full->tuple_counts) {
         //     continue;
@@ -239,6 +240,12 @@ void LIE::fixpoint_loop() {
         }
         free_relation_container(rel->delta);
         free_relation_container(rel->newt);
+    }
+    } else {
+        for (Relation *rel : update_relations) {
+            std::cout << "Finished! " << rel->name << " has "
+                  << rel->full->tuple_counts << std::endl;
+        }
     }
     timer.stop_timer();
     float merge_full_time = timer.get_spent_time();

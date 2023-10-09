@@ -71,14 +71,22 @@ void RelationalJoin::operator()() {
     checkCuda(cudaDeviceSynchronize());
     this->detail_time[0] += timer.get_spent_time();
 
-    tuple_size_t total_result_rows =
-        thrust::reduce(thrust::device, result_counts_array,
-                       result_counts_array + outer->tuple_counts, 0);
-
+    tuple_size_t total_result_rows = 0;
+    for (tuple_size_t i = 0; i < outer->tuple_counts; i = i + MAX_REDUCE_SIZE) {
+        tuple_size_t reduce_size = MAX_REDUCE_SIZE;
+        if (i + MAX_REDUCE_SIZE > outer->tuple_counts) {
+            reduce_size = outer->tuple_counts - i;
+        }
+        tuple_size_t reduce_v = thrust::reduce(
+            thrust::device, result_counts_array + i,
+            result_counts_array + i + reduce_size, 0);
+        total_result_rows += reduce_v;
+    }
     checkCuda(cudaDeviceSynchronize());
-    // std::cout << output_rel->name << "   " << outer->index_column_size
-    //           << " join result size(non dedup) " << total_result_rows
-    //           << std::endl;
+    std::cout << output_rel->name << "   " << outer->index_column_size
+              << " join result size(non dedup) " << total_result_rows
+              << std::endl;
+    // print_memory_usage();
     tuple_size_t *result_counts_offset;
     checkCuda(cudaMalloc((void **)&result_counts_offset,
                          outer->tuple_counts * sizeof(tuple_size_t)));

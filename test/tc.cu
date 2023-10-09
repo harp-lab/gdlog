@@ -119,6 +119,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
 
     timer.start_timer();
     LIE tc_scc(grid_size, block_size);
+    tc_scc.reload_full_flag = false;
     tc_scc.add_relations(edge_2__2_1, true);
     tc_scc.add_relations(path_2__1_2, false);
     float join_detail[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0};

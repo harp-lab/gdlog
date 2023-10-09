@@ -25,6 +25,8 @@ struct LIE {
     // GPU block size
     int block_size;
 
+    bool reload_full_flag = true;
+
     LIE(int grid_size, int block_size)
         : grid_size(grid_size), block_size(block_size) {}
 

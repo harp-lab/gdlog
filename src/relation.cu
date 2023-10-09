@@ -185,19 +185,6 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
             tuple_type cur_inner_tuple = inner_table->tuples[position];
             bool cmp_res = tuple_eq(inner_table->tuples[position], outer_tuple,
                                     join_column_counts);
-            // if (outer_tuple[0] == 1966 && outer_tuple[1] == 8149  && iter ==
-            // 1) {
-            //     printf("init pos %lld, map_size: %lld, hash: %lld\n",
-            //        index_position, inner_table->index_map_size,
-            //        hash_val);
-            //     printf("%d wwwwwwwwwwwwwwwwwwwwww %lld, %lld outer: %lld,
-            //     %lld; inner: %lld, %lld;\n",
-            //            cmp_res,
-            //            inner_table->index_map[index_position].value,
-            //            position,
-            //            outer_tuple[0], outer_tuple[1],
-            //            cur_inner_tuple[0], cur_inner_tuple[1]);
-            // }
             if (cmp_res) {
                 // hack to apply filter
                 // TODO: this will cause max arity of a relation is 20
@@ -245,18 +232,23 @@ get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
         u64 hash_val = prefix_hash(outer_tuple, outer_table->index_column_size);
         // the index value "pointer" position in the index hash table
         tuple_size_t index_position = hash_val % inner_table->index_map_size;
-        bool hash_not_exists = false;
+        bool index_not_exists = false;
         while (true) {
-            if (inner_table->index_map[index_position].key == hash_val) {
+            if (inner_table->index_map[index_position].key == hash_val &&
+                tuple_eq(
+                    outer_tuple,
+                    inner_table
+                        ->tuples[inner_table->index_map[index_position].value],
+                    outer_table->index_column_size)) {
                 break;
             } else if (inner_table->index_map[index_position].key ==
                        EMPTY_HASH_ENTRY) {
-                hash_not_exists = true;
+                index_not_exists = true;
                 break;
             }
             index_position = (index_position + 1) % inner_table->index_map_size;
         }
-        if (hash_not_exists) {
+        if (index_not_exists) {
             continue;
         }
 
@@ -287,26 +279,12 @@ get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
                     (*tp_gen)(inner_tuple, outer_tuple, new_tuple);
                     current_new_tuple_cnt++;
                 }
-                // if (output_reorder_array[j] < inner_table->arity) {
-                //     new_tuple[j] = inner_tuple[output_reorder_array[j]];
-                // } else {
-                //     new_tuple[j] = outer_tuple[output_reorder_array[j] -
-                //                                inner_table->arity];
-                // }
-                // }
                 if (current_new_tuple_cnt > res_count_array[i]) {
                     break;
                 }
             } else {
-                // if not prefix not match, there might be hash collision
-                tuple_type cur_inner_tuple = inner_table->tuples[position];
-                u64 inner_tuple_hash = prefix_hash(
-                    cur_inner_tuple, inner_table->index_column_size);
-                if (inner_tuple_hash != hash_val) {
-                    // bucket end
-                    break;
-                }
-                // collision, keep searching
+                // bucket end
+                break;
             }
             position = position + 1;
             if (position > (inner_table->tuple_counts - 1)) {
@@ -356,8 +334,10 @@ void Relation::flush_delta(int grid_size, int block_size) {
     checkCuda(cudaMemset(tuple_full_buf, 0, tuple_full_buf_mem_size));
     checkCuda(cudaDeviceSynchronize());
     tuple_type *end_tuple_full_buf = thrust::merge(
-        thrust::device, tuple_full, tuple_full + current_full_size,
-        delta->tuples, delta->tuples + delta->tuple_counts, tuple_full_buf,
+        thrust::device,
+        delta->tuples, delta->tuples + delta->tuple_counts,
+        tuple_full, tuple_full + current_full_size,
+        tuple_full_buf,
         tuple_indexed_less(delta->index_column_size, delta->arity));
     checkCuda(cudaDeviceSynchronize());
     current_full_size = end_tuple_full_buf - tuple_full_buf;
