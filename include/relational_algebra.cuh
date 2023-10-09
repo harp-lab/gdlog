@@ -4,6 +4,11 @@
 #include <thrust/host_vector.h>
 #include <variant>
 
+// for fixing
+#ifndef MAX_REDUCE_SIZE
+#define MAX_REDUCE_SIZE 80000000
+#endif
+
 // function hook describ how inner and outer tuple are reordered to result tuple
 
 /**
@@ -31,6 +36,9 @@ struct RelationalJoin {
     JoinDirection direction;
     int grid_size;
     int block_size;
+
+    // flag for benchmark, this will disable sorting on result
+    bool disable_load = false;
 
     // join time for debug and profiling
     float *detail_time;

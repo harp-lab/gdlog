@@ -1,5 +1,6 @@
 #include <chrono>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <stdlib.h>
 #include <thrust/execution_policy.h>
@@ -101,7 +102,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     int relation_columns = 2;
     std::chrono::high_resolution_clock::time_point time_point_begin;
     std::chrono::high_resolution_clock::time_point time_point_end;
-    time_point_begin = std::chrono::high_resolution_clock::now();
+    
     double spent_time;
 
     // load the input relation
@@ -136,6 +137,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     }
 
     timer.start_timer();
+    
     Relation *assign_2__2_1 = new Relation();
     load_relation(assign_2__2_1, "assign_2__2_1", 2, raw_reverse_assign_data,
                   assign_counts, 1, 0, grid_size, block_size);
@@ -164,14 +166,16 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     load_relation(memory_alias_2__1_2, "memory_alias_2__1_2", 2, nullptr, 0, 1,
                   0, grid_size, block_size);
     Relation *memory_alias_2__2_1 = new Relation();
-    load_relation(memory_alias_2__2_1, "memory_alias_2__1_2", 2, nullptr, 0, 1,
+    load_relation(memory_alias_2__2_1, "memory_alias_2__2_1", 2, nullptr, 0, 1,
                   0, grid_size, block_size);
 
     timer.start_timer();
+    time_point_begin = std::chrono::high_resolution_clock::now();
     LIE init_scc(grid_size, block_size);
     init_scc.add_relations(value_flow_2__1_2, false);
     init_scc.add_relations(value_flow_2__2_1, false);
     init_scc.add_relations(memory_alias_2__1_2, false);
+    init_scc.add_relations(memory_alias_2__2_1, false);
     init_scc.add_relations(assign_2__2_1, true);
     tuple_copy_hook cp_2_1__1_host;
     checkCuda(cudaMemcpyFromSymbol(&cp_2_1__1_host, cp_2_1__1_device,
@@ -205,10 +209,19 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     init_scc.add_ra(RelationalCopy(value_flow_2__1_2, DELTA, value_flow_2__2_1,
                                    cp_2_1__1_2_host, nullptr, grid_size,
                                    block_size));
+    init_scc.add_ra(RelationalCopy(memory_alias_2__1_2, DELTA, memory_alias_2__2_1,
+                                   cp_2_1__1_2_host, nullptr, grid_size,
+                                   block_size));
     init_scc.fixpoint_loop();
 
     timer.stop_timer();
+    time_point_end = std::chrono::high_resolution_clock::now();
     std::cout << "init scc time: " << timer.get_spent_time() << std::endl;
+    std::cout << "init scc time (chono): "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     time_point_end - time_point_begin)
+                     .count()
+              << std::endl;
 
     // scc analysis
     Relation *value_flow_forward_2__1_2 = new Relation();
@@ -231,15 +244,11 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     Relation *tmp_rel_ma1 = new Relation();
     tmp_rel_ma1->index_flag = false;
     load_relation(tmp_rel_ma1, "tmp_rel_ma1", 2, nullptr, 0, 1, 0, grid_size,
-                  block_size);
-    Relation *tmp_rel_ma2 = new Relation();
+                  block_size, true);
+     Relation *tmp_rel_ma2 = new Relation();
     tmp_rel_ma2->index_flag = false;
     load_relation(tmp_rel_ma2, "tmp_rel_ma2", 2, nullptr, 0, 1, 0, grid_size,
-                  block_size);
-    
-    Relation *tmp_rel_vmv = new Relation();
-    load_relation(tmp_rel_ma2, "tmp_rel_ma2", 2, nullptr, 0, 1, 0, grid_size,
-                  block_size);
+                  block_size, true);
 
     LIE analysis_scc(grid_size, block_size);
 
@@ -252,19 +261,15 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     analysis_scc.add_relations(memory_alias_2__1_2, false);
     analysis_scc.add_relations(memory_alias_2__2_1, false);
     analysis_scc.add_relations(value_alias_2__1_2, false);
-    analysis_scc.add_relations(tmp_rel_vmv, false);
-    // analysis_scc.add_relations(value_flow_forward_2__1_2, false);
-    // analysis_scc.add_relations(value_flow_forward_2__2_1, false);
 
     // join order matters for temp!
     analysis_scc.add_tmp_relation(tmp_rel_def);
     analysis_scc.add_tmp_relation(tmp_rel_ma1);
     analysis_scc.add_tmp_relation(tmp_rel_ma2);
-    // analysis_scc.add_tmp_relation(value_flow_2__2_1);
-    // analysis_scc.add_tmp_relation(value_flow_forward_2__2_1);
+
+    float join_detail[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
 
     // join_vf_vfvf: ValueFlow(x, y) :- ValueFlow(x, z), ValueFlow(z, y).
-    float join_vf_vfvf_detail_time[3];
     tuple_generator_hook join_10_11_host;
     checkCuda(cudaMemcpyFromSymbol(&join_10_11_host, join_10_11_device,
                          sizeof(tuple_generator_hook)));
@@ -274,47 +279,43 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     analysis_scc.add_ra(
         RelationalJoin(value_flow_2__1_2, FULL, value_flow_2__2_1, DELTA,
                        value_flow_2__1_2, join_10_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_vf_vfvf_detail_time));
+                       grid_size, block_size, join_detail));
     analysis_scc.add_ra(
         RelationalJoin(value_flow_2__2_1, FULL, value_flow_2__1_2, DELTA,
                        value_flow_2__1_2, join_01_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_vf_vfvf_detail_time));
+                       grid_size, block_size, join_detail));
 
     // join_va_vf_vf: ValueAlias(x, y) :- ValueFlow(z, x), ValueFlow(z, y).
     // v1
-    float join_va_vfvf_detail_time[3];
     analysis_scc.add_ra(
         RelationalJoin(value_flow_2__1_2, FULL, value_flow_2__1_2, DELTA,
                        value_alias_2__1_2, join_01_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_va_vfvf_detail_time));
+                       grid_size, block_size, join_detail));
     // v2
     analysis_scc.add_ra(
         RelationalJoin(value_flow_2__1_2, FULL, value_flow_2__1_2, DELTA,
                        value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_va_vfvf_detail_time));
+                       grid_size, block_size, join_detail));
 
     // join_vf_am: ValueFlow(x, y) :- Assign(x, z), MemoryAlias(z, y).
-    float join_vf_am_detail_time[3];
     analysis_scc.add_ra(
         RelationalJoin(assign_2__2_1, FULL, memory_alias_2__1_2, DELTA,
                        value_flow_2__1_2, join_01_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_vf_am_detail_time));
+                       grid_size, block_size, join_detail));
 
     // tmp_rel_def(z, x) :- Dereference(y, x), ValueAlias(y, z)
-    float join_temp_rel_def_detail[3];
     analysis_scc.add_ra(
         RelationalJoin(dereference_2__1_2, FULL, value_alias_2__1_2, DELTA,
                        tmp_rel_def, join_10_11_host, nullptr, LEFT, grid_size,
-                       block_size, join_temp_rel_def_detail));
+                       block_size, join_detail));
 
     // WARNING: tmp relation can only in outer because it doesn't include
     // index!
     // join_ma_d_tmp: MemoryAlias(x, w) :- Dereference(z, w) , tmp_rel_def(z,x)
-    float join_ma_d_tmp_detail[3];
     analysis_scc.add_ra(
         RelationalJoin(dereference_2__1_2, FULL, tmp_rel_def, NEWT,
                        memory_alias_2__1_2, join_10_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_ma_d_tmp_detail));
+                       grid_size, block_size, join_detail));
 
     // ValueAlias(x,y) :- 
     //    ValueFlow(z,x),
@@ -326,41 +327,28 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     // join_tmp_vf_ma : tmp_rel_ma(w, x) :- ValueFlow(z, x), MemoryAlias(z, w).
     // join_va_tmp_vf : ValueAlias(x, y) :- tmp_rel_ma(w, x), ValueFlow(w,y).
     // v1
-    float join_tmp_vf_ma_detail[3];
     analysis_scc.add_ra(
         RelationalJoin(memory_alias_2__1_2, FULL , value_flow_2__1_2, DELTA,
                        tmp_rel_ma1, join_01_11_host, nullptr, LEFT, grid_size,
-                       block_size, join_tmp_vf_ma_detail));
+                       block_size, join_detail));
     analysis_scc.add_ra(
         RelationalJoin(value_flow_2__1_2, FULL, memory_alias_2__1_2, DELTA,
                        tmp_rel_ma1, join_10_11_host, nullptr, LEFT, grid_size,
-                       block_size, join_tmp_vf_ma_detail));
-    float join_va_tmp_vf_detail[3];
+                       block_size, join_detail));
+
     analysis_scc.add_ra(
         RelationalJoin(value_flow_2__1_2, FULL, tmp_rel_ma1, NEWT,
                        value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_va_tmp_vf_detail));
-    float join_va_tmp_vf_detail2[3];
+                       grid_size, block_size, join_detail));
+
     analysis_scc.add_ra(
-        RelationalJoin(memory_alias_2__1_2, FULL , value_flow_2__1_2, FULL,
+        RelationalJoin(memory_alias_2__2_1, FULL , value_flow_2__1_2, DELTA,
                        tmp_rel_ma2, join_01_11_host, nullptr, LEFT, grid_size,
-                       block_size, join_tmp_vf_ma_detail));
+                       block_size, join_detail));
      analysis_scc.add_ra(
-        RelationalJoin(value_flow_2__1_2, DELTA, tmp_rel_ma2, NEWT,
-                       value_alias_2__1_2, join_10_11_host, nullptr, LEFT,
-                       grid_size, block_size, join_va_tmp_vf_detail));
-    // analysis_scc.add_ra(
-    //     RelationalJoin(memory_alias_2__2_1, FULL , value_flow_2__1_2, DELTA,
-    //                    tmp_rel_ma2, join_01_11_host, nullptr, LEFT, grid_size,
-    //                    block_size, join_tmp_vf_ma_detail));
-    //  analysis_scc.add_ra(
-    //     RelationalJoin(value_flow_2__1_2, DELTA, tmp_rel_ma2, NEWT,
-    //                    value_alias_2__1_2, join_01_11_host, nullptr, LEFT,
-    //                    grid_size, block_size, join_va_tmp_vf_detail));
-
-    // v2
-
-
+        RelationalJoin(value_flow_2__1_2, FULL, tmp_rel_ma2, NEWT,
+                       value_alias_2__1_2, join_01_11_host, nullptr, LEFT,
+                       grid_size, block_size, join_detail));
 
     analysis_scc.add_ra(RelationalACopy(value_flow_2__1_2, value_flow_2__2_1,
                                         cp_2_1__1_2_host, nullptr, grid_size,
@@ -368,11 +356,26 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     analysis_scc.add_ra(RelationalACopy(memory_alias_2__1_2, memory_alias_2__2_1,
                                         cp_2_1__1_2_host, nullptr, grid_size,
                                         block_size));
-
+    time_point_begin = std::chrono::high_resolution_clock::now();
+    timer.start_timer();
     analysis_scc.fixpoint_loop();
     // print_tuple_rows(value_flow_2__1_2->full, "value_flow_2__1_2");
     timer.stop_timer();
+    time_point_end = std::chrono::high_resolution_clock::now();
     std::cout << "analysis scc time: " << timer.get_spent_time() << std::endl;
+    std::cout << "analysis scc time (chono): "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     time_point_end - time_point_begin)
+                     .count()
+              << std::endl;
+    std::cout << "join detail: " << std::endl;
+    std::cout << "compute size time:  " <<  join_detail[0] <<  std::endl;
+    std::cout << "reduce + scan time: " <<  join_detail[1] <<  std::endl;
+    std::cout << "fetch result time:  " <<  join_detail[2] <<  std::endl;
+    std::cout << "sort time:          " <<  join_detail[3] <<  std::endl;
+    std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
+    std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
+    std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -381,7 +384,9 @@ int main(int argc, char *argv[]) {
     cudaGetDevice(&device_id);
     cudaDeviceGetAttribute(&number_of_sm, cudaDevAttrMultiProcessorCount,
                            device_id);
-    std::cout << "num of sm " << number_of_sm << std::endl;
+    int max_threads_per_block;
+    cudaDeviceGetAttribute(&max_threads_per_block, cudaDevAttrMaxThreadsPerBlock, 0);
+    std::cout << "num of sm " << number_of_sm << " num of thread per block " << max_threads_per_block << std::endl;
     std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
               << std::endl;
     int block_size, grid_size;

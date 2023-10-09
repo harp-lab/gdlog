@@ -35,10 +35,12 @@ void RelationalACopy::operator()() {
     checkCuda(cudaDeviceSynchronize());
 
     free_relation_container(dest);
+    float detail_time[5] = {0, 0, 0, 0, 0};
+    // TODO: swap to repartition_relation_index in future
     load_relation_container(dest, dest->arity, copied_raw_data,
                             src->tuple_counts, src->index_column_size,
                             dest->dependent_column_size, 0.8, grid_size,
-                            block_size, true, false, true);
+                            block_size, detail_time, true, false, true);
     checkCuda(cudaDeviceSynchronize());
     // print_tuple_rows(dest, "delta");
     // merge delta to full immediately here

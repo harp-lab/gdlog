@@ -3,6 +3,10 @@
 #include <string>
 #include <vector>
 
+#ifndef RADIX_SORT_THRESHOLD
+#define RADIX_SORT_THRESHOLD 0
+#endif
+
 enum RelationVersion { DELTA, FULL, NEWT };
 
 /**
@@ -17,7 +21,7 @@ struct MEntity {
     tuple_size_t value;
 };
 
-#define EMPTY_HASH_ENTRY ULLONG_MAX
+#define EMPTY_HASH_ENTRY ULONG_MAX
 /**
  * @brief a C-style hashset indexing based relation container.
  *        Actual data is still stored using sorted set.
@@ -57,11 +61,12 @@ struct GHashRelContainer {
     // tuple_counts when deduplicated
     tuple_size_t data_raw_row_size = 0;
     int arity;
+    bool tmp_flag = false;
 
     GHashRelContainer(int arity, int indexed_column_size,
-                      int dependent_column_size)
+                      int dependent_column_size, bool tmp_flag = false)
         : arity(arity), index_column_size(indexed_column_size),
-          dependent_column_size(dependent_column_size){};
+          dependent_column_size(dependent_column_size), tmp_flag(tmp_flag){};
 };
 
 enum JoinDirection { LEFT, RIGHT };
@@ -137,6 +142,8 @@ __global__ void init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
 __global__ void get_join_result_size(GHashRelContainer *inner_table,
                                      GHashRelContainer *outer_table,
                                      int join_column_counts,
+                                     tuple_generator_hook tp_gen,
+                                     tuple_predicate tp_pred,
                                      tuple_size_t *join_result_size);
 
 /**
@@ -154,9 +161,9 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
 __global__ void
 get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
                 int join_column_counts, tuple_generator_hook tp_gen,
-                int output_arity, column_type *output_raw_data,
-                tuple_size_t *res_count_array, tuple_size_t *res_offset,
-                JoinDirection direction);
+                tuple_predicate tp_pred, int output_arity,
+                column_type *output_raw_data, tuple_size_t *res_count_array,
+                tuple_size_t *res_offset, JoinDirection direction);
 
 __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
                                         column_type *raw,
@@ -192,8 +199,16 @@ void load_relation_container(
     GHashRelContainer *target, int arity, column_type *data,
     tuple_size_t data_row_size, tuple_size_t index_column_size,
     int dependent_column_size, float index_map_load_factor, int grid_size,
-    int block_size, bool gpu_data_flag = false, bool sorted_flag = false,
-    bool build_index_flag = true, bool tuples_array_flag = true);
+    int block_size, float *detail_time, bool gpu_data_flag = false,
+    bool sorted_flag = false, bool build_index_flag = true,
+    bool tuples_array_flag = true);
+
+void repartition_relation_index(GHashRelContainer *target, int arity,
+                                column_type *data, tuple_size_t data_row_size,
+                                tuple_size_t index_column_size,
+                                int dependent_column_size,
+                                float index_map_load_factor, int grid_size,
+                                int block_size, float *detail_time);
 
 /**
  * @brief copy a relation into an **empty** relation
@@ -238,23 +253,24 @@ enum MonotonicOrder { DESC, ASC, UNSPEC };
  */
 struct Relation {
     int arity;
-    // the first <index_column_size> columns of a relation will be use to build
-    // relation index, and only indexed columns can be used to join
+    // the first <index_column_size> columns of a relation will be use to
+    // build relation index, and only indexed columns can be used to join
     int index_column_size;
     std::string name;
 
-    // the last <dependent_column_size> will be used a dependant columns, these
-    // column can be used to store recurisve aggreagtion/choice domain's result,
-    // these columns can't be used as index columns
+    // the last <dependent_column_size> will be used a dependant columns,
+    // these column can be used to store recurisve aggreagtion/choice
+    // domain's result, these columns can't be used as index columns
     int dependent_column_size = 0;
     bool index_flag = true;
+    bool tmp_flag = false;
 
     GHashRelContainer *delta;
     GHashRelContainer *newt;
     GHashRelContainer *full;
 
-    // TODO: out dataed remove these, directly use GHashRelContainer **full**
-    // a buffer for tuple pointer in full
+    // TODO: out dataed remove these, directly use GHashRelContainer
+    // **full** a buffer for tuple pointer in full
     tuple_size_t current_full_size = 0;
     tuple_type *tuple_full;
     //
@@ -266,7 +282,8 @@ struct Relation {
     MonotonicOrder monotonic_order = MonotonicOrder::DESC;
 
     /**
-     * @brief store the data in DELTA into full relation (this won't free delta)
+     * @brief store the data in DELTA into full relation (this won't free
+     * delta)
      *
      * @param grid_size
      * @param block_size
@@ -290,4 +307,4 @@ struct Relation {
 void load_relation(Relation *target, std::string name, int arity,
                    column_type *data, tuple_size_t data_row_size,
                    tuple_size_t index_column_size, int dependent_column_size,
-                   int grid_size, int block_size);
+                   int grid_size, int block_size, bool tmp_flag = false);

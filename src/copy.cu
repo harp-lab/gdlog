@@ -37,20 +37,21 @@ void RelationalCopy::operator()() {
                                                tuple_generator);
     checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
+    float load_relation_container_time[5] = {0, 0, 0, 0, 0};
 
     if (dest->tuples == nullptr || dest->tuple_counts == 0) {
         free_relation_container(dest);
-        load_relation_container(dest, dest->arity, copied_raw_data,
-                                src->tuple_counts, src->index_column_size,
-                                dest->dependent_column_size, 0.8, grid_size,
-                                block_size, true, false, false);
+        load_relation_container(
+            dest, dest->arity, copied_raw_data, src->tuple_counts,
+            src->index_column_size, dest->dependent_column_size, 0.8, grid_size,
+            block_size, load_relation_container_time, true, false, false);
     } else {
         GHashRelContainer *tmp = new GHashRelContainer(
             dest->arity, dest->index_column_size, dest->dependent_column_size);
-        load_relation_container(tmp, dest->arity, copied_raw_data,
-                                src->tuple_counts, src->index_column_size,
-                                dest->dependent_column_size, 0.8, grid_size,
-                                block_size, true, false, false);
+        load_relation_container(
+            tmp, dest->arity, copied_raw_data, src->tuple_counts,
+            src->index_column_size, dest->dependent_column_size, 0.8, grid_size,
+            block_size, load_relation_container_time, true, false, false);
         checkCuda(cudaDeviceSynchronize());
         // merge to newt
         GHashRelContainer *old_newt = dest;
@@ -86,7 +87,8 @@ void RelationalCopy::operator()() {
         load_relation_container(dest, output_arity, new_newt_raw,
                                 new_newt_counts, dest->index_column_size,
                                 dest->dependent_column_size, 0.8, grid_size,
-                                block_size, true, true, false);
+                                block_size, load_relation_container_time, true,
+                                true, false);
         // delete tmp;
     }
     std::cout << "copy finish " << std::endl;

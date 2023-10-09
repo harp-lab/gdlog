@@ -14,6 +14,8 @@ Some prototypes for slog's gpu backend
 - Follow the installation instructions for your operating system. Make sure to install version 11.4.2 or later.
 ### CMake 
 - Download and install CMake(version 3.9 or later) from the CMake website: [https://cmake.org/download/](https://cmake.org/download/)
+## Thrust
+- need apply patch https://github.com/NVIDIA/thrust/pull/1832/files to fix integer overflow in `thrust::reduce`
 
 ## Transitive Closure Computation
 - Transitive closure computation is a fundamental operation in graph analytics and relational algebra.
@@ -82,6 +84,32 @@ start lie ....
 GPUassert: an illegal memory access was encountered /home/arsho/slog-gpu-backend/src/relational_algebra.cu 78
 ```
 
+### Examples
+a TC example
+```
+    Relation *edge_2__2_1 = new Relation();
+    Relation *path_2__1_2 = new Relation();
+
+    load_relation(path_2__1_2, "path_2__1_2", 2, raw_graph_data,
+                  graph_edge_counts, 1, 0, grid_size, block_size);
+    load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
+                  graph_edge_counts, 1, 0, grid_size, block_size);
+
+    LIE tc_scc(grid_size, block_size);
+    tc_scc.add_relations(edge_2__2_1, true);
+    tc_scc.add_relations(path_2__1_2, false);
+    float join_detail[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+    tuple_generator_hook reorder_path_host;
+    cudaMemcpyFromSymbol(&reorder_path_host, reorder_path_device,
+                         sizeof(tuple_generator_hook));
+    tuple_copy_hook cp_1_host;
+    cudaMemcpyFromSymbol(&cp_1_host, cp_1_device, sizeof(tuple_copy_hook));
+    tc_scc.add_ra(RelationalJoin(edge_2__2_1, FULL, path_2__1_2, DELTA,
+                                 path_2__1_2, reorder_path_host, nullptr,
+                                 LEFT, grid_size, block_size, join_detail));
+
+    tc_scc.fixpoint_loop();
+```
 
 ### References
 - [Getting Started on ThetaGPU](https://docs.alcf.anl.gov/theta-gpu/getting-started/)

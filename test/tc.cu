@@ -119,9 +119,10 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
 
     timer.start_timer();
     LIE tc_scc(grid_size, block_size);
+    tc_scc.reload_full_flag = false;
     tc_scc.add_relations(edge_2__2_1, true);
     tc_scc.add_relations(path_2__1_2, false);
-    float join_time[3];
+    float join_detail[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
     tuple_generator_hook reorder_path_host;
     cudaMemcpyFromSymbol(&reorder_path_host, reorder_path_device,
                          sizeof(tuple_generator_hook));
@@ -129,7 +130,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     cudaMemcpyFromSymbol(&cp_1_host, cp_1_device, sizeof(tuple_copy_hook));
     tc_scc.add_ra(RelationalJoin(edge_2__2_1, FULL, path_2__1_2, DELTA,
                                  path_2__1_2, reorder_path_host, nullptr,
-                                 LEFT, grid_size, block_size, join_time));
+                                 LEFT, grid_size, block_size, join_detail));
 
     tc_scc.fixpoint_loop();
 
@@ -137,6 +138,14 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     std::cout << "Path counts " << path_2__1_2->full->tuple_counts << std::endl;
     // print_tuple_rows(path_2__2_1->full, "full");
     std::cout << "TC time: " << timer.get_spent_time() << std::endl;
+    std::cout << "join detail: " << std::endl;
+    std::cout << "compute size time:  " <<  join_detail[0] <<  std::endl;
+    std::cout << "reduce + scan time: " <<  join_detail[1] <<  std::endl;
+    std::cout << "fetch result time:  " <<  join_detail[2] <<  std::endl;
+    std::cout << "sort time:          " <<  join_detail[3] <<  std::endl;
+    std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
+    std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
+    std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
 }
 
 void analysis_bench2(const char *dataset_path, int block_size, int grid_size) {
