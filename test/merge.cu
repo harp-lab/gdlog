@@ -9,6 +9,8 @@
 #include <thrust/set_operations.h>
 #include <thrust/sort.h>
 #include <vector>
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
 
 #include "../include/lie.cuh"
 #include "../include/print.cuh"
@@ -105,7 +107,7 @@ int main(int argc, char *argv[]) {
     }
     std::cout << "finish reverse graph." << std::endl;
 
-    int REPEAT = 1;
+    int REPEAT = 10;
     // init the tuples
     time_point_end = std::chrono::high_resolution_clock::now();
     spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
@@ -130,7 +132,7 @@ int main(int argc, char *argv[]) {
     load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
                   graph_edge_counts, 1, 0, grid_size, block_size);
     LIE tc_scc(grid_size, block_size);
-    tc_scc.max_iteration = 1;
+    tc_scc.max_iteration = 277;
     tc_scc.reload_full_flag = false;
     tc_scc.add_relations(edge_2__2_1, true);
     tc_scc.add_relations(path_2__1_2, false);
@@ -146,6 +148,7 @@ int main(int argc, char *argv[]) {
     timer.start_timer();
     tc_scc.fixpoint_loop();
     timer.stop_timer();
+
     std::cout << "Path counts " << path_2__1_2->full->tuple_counts << std::endl;
     // print_tuple_rows(path_2__2_1->full, "full");
     std::cout << "TC time: " << timer.get_spent_time() << std::endl;
@@ -176,7 +179,6 @@ int main(int argc, char *argv[]) {
         tuple_indexed_less(path_2__1_2->full->index_column_size,
                            path_2__1_2->full->arity -
                                path_2__1_2->dependent_column_size));
-    cudaDeviceSynchronize();
     tuple_size_t tp_counts = dedup_buf_end - dedup_buf;
     time_point_end = std::chrono::high_resolution_clock::now();
     spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
@@ -185,39 +187,137 @@ int main(int argc, char *argv[]) {
     std::cout << "deduplicate with full time: " << spent_time << std::endl;
 
     // test merge speed
-    time_point_begin = std::chrono::high_resolution_clock::now();
+    
     tuple_type *merge_buf;
     std::cout << "start merge test ..." << std::endl;
-    timer.start_timer();
-    cudaMalloc((void **)&merge_buf, path_2__1_2->full->tuple_counts +
-                                        tp_counts * sizeof(tuple_type));
+    std::cout << "full size " << path_2__1_2->full->tuple_counts << std::endl;
+    
+    double alloc_time = 0;
+    for (int i = 0; i < REPEAT; i++) {
+        timer.start_timer();
+        cudaMalloc((void **)&merge_buf, (path_2__1_2->full->tuple_counts +
+                                        tp_counts) * sizeof(tuple_type));
+        timer.stop_timer();
+        alloc_time += timer.get_spent_time();
+        cudaFree(merge_buf);
+        merge_buf = nullptr;
+    }
+    cudaMalloc((void **)&merge_buf, (path_2__1_2->full->tuple_counts +
+                                        tp_counts) * sizeof(tuple_type));
+    std::cout << "alloc merge buf time: " << alloc_time << std::endl;
+
+    std::cout << "start merge test 2 ..." << std::endl;
+    
+    double resize_time = 0;
+    for (int i = 0; i < REPEAT; i++) {
+        thrust::device_vector<tuple_type> full_buf_vec(path_2__1_2->full->tuples, path_2__1_2->full->tuples + path_2__1_2->full->tuple_counts);
+        timer.start_timer();
+        full_buf_vec.resize(path_2__1_2->full->tuple_counts+ tp_counts);
+        timer.stop_timer();
+        resize_time += timer.get_spent_time();
+    }
+    
+    std::cout << "resize merge buf time: " << resize_time << std::endl;
+    
+    std::cout << "dedup size " << tp_counts << std::endl;
     print_memory_usage();
-    cudaDeviceSynchronize();
-    thrust::merge(thrust::device, path_2__1_2->tuple_full,
-                  path_2__1_2->tuple_full + path_2__1_2->current_full_size,
-                  dedup_buf, dedup_buf_end, merge_buf);
+    timer.start_timer();
+    for (int i = 0; i < REPEAT; i++) {
+        thrust::merge(thrust::device, path_2__1_2->tuple_full,
+                      path_2__1_2->tuple_full + path_2__1_2->current_full_size,
+                      dedup_buf, dedup_buf_end, merge_buf,
+                      tuple_indexed_less(path_2__1_2->full->index_column_size,
+                               path_2__1_2->full->arity));
+    }
     timer.stop_timer();
     std::cout << "merge int once time: " << timer.get_spent_time() << std::endl;
 
-    std::cout << "start multi merge test ..." << std::endl;
-    tuple_size_t merge_step = 5000;
-    time_point_begin = std::chrono::high_resolution_clock::now();
-    for(tuple_size_t i = 0; i < path_2__1_2->full->tuple_counts; i += merge_step) {
-        tuple_size_t merge_size = merge_step;
-        if (i + merge_step > path_2__1_2->full->tuple_counts) {
-            merge_size = path_2__1_2->full->tuple_counts - i;
-        }
-        cudaDeviceSynchronize();
-        thrust::merge(thrust::device, path_2__1_2->tuple_full + i,
-                      path_2__1_2->tuple_full + i + merge_size,
-                      dedup_buf, dedup_buf_end, merge_buf);
-    }
-    cudaDeviceSynchronize();
-    time_point_end = std::chrono::high_resolution_clock::now();
-    spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
-                     time_point_end - time_point_begin)
-                     .count();
-    std::cout << "multi merge time: " << spent_time << std::endl;
+    // std::cout << "start merge test 2 ..." << std::endl;
+    // thrust::device_vector<tuple_type> full_buf_vec(path_2__1_2->full->tuples, path_2__1_2->full->tuples + path_2__1_2->full->tuple_counts);
+    // thrust::device_vector<tuple_type> dedup_buf_vec(dedup_buf, dedup_buf_end);
+    // for (int i = 0; i < REPEAT; i++) {
+    //     timer.start_timer();
+    //     thrust::merge(thrust::device, full_buf_vec.begin(),
+    //                   full_buf_vec.end(),
+    //                   dedup_buf_vec.begin(), dedup_buf_vec.end(), merge_buf,
+    //                   tuple_indexed_less(path_2__1_2->full->index_column_size,
+    //                            path_2__1_2->full->arity));
+    //     timer.stop_timer();
+    // }
+
+    // std::cout << "start multi merge test ..." << std::endl;
+    // tuple_size_t merge_step = 5000;
+    // time_point_begin = std::chrono::high_resolution_clock::now();
+    // for(tuple_size_t i = 0; i < path_2__1_2->full->tuple_counts; i += merge_step) {
+    //     tuple_size_t merge_size = merge_step;
+    //     if (i + merge_step > path_2__1_2->full->tuple_counts) {
+    //         merge_size = path_2__1_2->full->tuple_counts - i;
+    //     }
+    //     cudaDeviceSynchronize();
+    //     thrust::merge(thrust::device, path_2__1_2->tuple_full + i,
+    //                   path_2__1_2->tuple_full + i + merge_size,
+    //                   dedup_buf, dedup_buf_end, merge_buf,
+    //                   tuple_indexed_less(path_2__1_2->full->index_column_size,
+    //                        path_2__1_2->full->arity));
+    // }
+    // cudaDeviceSynchronize();
+    // time_point_end = std::chrono::high_resolution_clock::now();
+    // spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
+    //                  time_point_end - time_point_begin)
+    //                  .count();
+    // std::cout << "multi merge time 1: " << spent_time << std::endl;
+
+    // std::cout << "start multi merge test 2 ..." << std::endl;
+    // timer.start_timer();
+    // tuple_type *merge_buf_2;
+    // cudaMalloc((void **)&merge_buf_2, path_2__1_2->full->tuple_counts * sizeof(tuple_type));
+    // tuple_type *merge_buf_3;
+    // cudaMalloc((void **)&merge_buf_3, path_2__1_2->full->tuple_counts * sizeof(tuple_type));
+    // tuple_size_t cur_merged_size = 0;
+    // print_memory_usage();
+    // cudaDeviceSynchronize();
+    // time_point_begin = std::chrono::high_resolution_clock::now();
+    // for(tuple_size_t i = 0; i < path_2__1_2->full->tuple_counts; i += merge_step) {
+    //     tuple_size_t merge_size = merge_step;
+    //     if (i + merge_step > path_2__1_2->full->tuple_counts) {
+    //         merge_size = path_2__1_2->full->tuple_counts - i;
+    //     }
+    //     thrust::merge(thrust::device, path_2__1_2->tuple_full + i,
+    //                   path_2__1_2->tuple_full + i + merge_size,
+    //                   merge_buf_2, merge_buf_2 + cur_merged_size, merge_buf_2,
+    //                   tuple_indexed_less(path_2__1_2->full->index_column_size,
+    //                        path_2__1_2->full->arity));
+    //     cudaDeviceSynchronize();
+    //     cur_merged_size += merge_size;
+    // }
+    // time_point_end = std::chrono::high_resolution_clock::now();
+    // spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
+    //                  time_point_end - time_point_begin)
+    //                  .count();
+    // std::cout << "multi merge time 2: " << spent_time << std::endl;
     cudaFree(merge_buf);
+
+    std::cout << "stupid test .... " << std::endl;
+    thrust::host_vector<int> H1(4);
+    // initialize individual elements
+    H1[0] = 14;
+    H1[1] = 20;
+    H1[2] = 38;
+    H1[3] = 46;
+    thrust::host_vector<int> H2(3);
+    // initialize individual elements
+    H2[0] = 12;
+    H2[1] = 31;
+    H2[2] = 53;
+    thrust::device_vector<int> h1_device = H1;
+    thrust::device_vector<int> h2_device = H2;
+    // h1_device.resize(7);
+    thrust::merge(thrust::device, h1_device.begin(), h1_device.begin()+4,
+                  h2_device.begin(), h2_device.end(), h1_device.begin(), thrust::less<int>());
+    thrust::host_vector<int> H3 = h1_device;
+    for (int i = 0; i < H3.size(); i++) {
+        std::cout << H3[i] << std::endl;
+    }
+
     return 0;
 }

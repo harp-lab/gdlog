@@ -33,6 +33,7 @@ void LIE::fixpoint_loop() {
     float set_diff_time = 0;
     float rebuild_delta_time = 0;
     float flatten_full_time = 0;
+    float memory_alloc_time = 0;
 
     float join_get_size_time = 0;
     float join_get_result_time = 0;
@@ -76,7 +77,6 @@ void LIE::fixpoint_loop() {
                                             }
                                         }},
                        ra_op);
-            checkCuda(cudaDeviceSynchronize());
             timer.stop_timer();
             join_time += timer.get_spent_time();
         }
@@ -136,7 +136,7 @@ void LIE::fixpoint_loop() {
                 tuple_indexed_less(rel->full->index_column_size,
                                    rel->full->arity -
                                        rel->dependent_column_size));
-            checkCuda(cudaDeviceSynchronize());
+            // checkCuda(cudaDeviceSynchronize());
             tuple_size_t deduplicate_size =
                 deuplicated_end - deduplicated_newt_tuples;
 
@@ -172,17 +172,22 @@ void LIE::fixpoint_loop() {
                 rel->full->dependent_column_size,
                 rel->full->index_map_load_factor, grid_size, block_size,
                 load_detail_time, true, true, true);
-            checkCuda(cudaDeviceSynchronize());
+            // checkCuda(cudaDeviceSynchronize());
             timer.stop_timer();
             rebuild_delta_time += timer.get_spent_time();
             rebuild_rel_sort_time += load_detail_time[0];
             rebuild_rel_unique_time += load_detail_time[1];
             rebuild_rel_index_time += load_detail_time[2];
 
+            // auto old_full = rel->tuple_full;
+            float flush_detail_time[5] = {0, 0, 0, 0, 0};
             timer.start_timer();
-            rel->flush_delta(grid_size, block_size);
+            rel->flush_delta(grid_size, block_size, flush_detail_time);
             timer.stop_timer();
-            merge_time += timer.get_spent_time();
+            merge_time += flush_detail_time[1];
+            memory_alloc_time += flush_detail_time[0];
+            memory_alloc_time += flush_detail_time[2];
+            // checkCuda(cudaFree(old_full));
 
             // print_tuple_rows(rel->full, "Path full after load newt");
             std::cout << "iteration " << iteration_counter << " relation "
@@ -195,6 +200,11 @@ void LIE::fixpoint_loop() {
         std::cout << "Iteration " << iteration_counter << " finish populating"
                   << std::endl;
         print_memory_usage();
+        std::cout << "Join time: " << join_time
+              << " ; merge full time: " << merge_time
+              << " ; memory alloc time: " << memory_alloc_time
+              << " ; rebuild delta time: " << rebuild_delta_time
+              << " ; set diff time: " << set_diff_time << std::endl;
         iteration_counter++;
         // if (iteration_counter >= 3) {
         //     break;
@@ -207,6 +217,7 @@ void LIE::fixpoint_loop() {
     // merge full after reach fixpoint
     timer.start_timer();
     if (reload_full_flag) {
+        std::cout << "Start merge full" << std::endl;
     for (Relation *rel : update_relations) {
         // if (rel->current_full_size <= rel->full->tuple_counts) {
         //     continue;

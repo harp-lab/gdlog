@@ -65,7 +65,7 @@ void RelationalCopy::operator()() {
             old_newt->tuples + old_newt->tuple_counts, tmp->tuples,
             tmp->tuples + tmp->tuple_counts, tp_buffer,
             tuple_indexed_less(dest->index_column_size, output_arity));
-        checkCuda(cudaDeviceSynchronize());
+        // checkCuda(cudaDeviceSynchronize());
         // checkCuda(cudaFree(tmp->tuples));
         // checkCuda(cudaFree(old_newt->tuples));
         tp_buffer_end = thrust::unique(thrust::device, tp_buffer, tp_buffer_end,

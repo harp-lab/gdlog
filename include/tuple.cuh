@@ -109,6 +109,12 @@ struct tuple_indexed_less {
         // compare hash first, could be index very different but share the same
         // hash
         // same hash
+        if (lhs == 0) {
+            return false;
+        }
+        if (rhs == 0) {
+            return true;
+        }
         for (tuple_size_t i = 0; i < arity; i++) {
             if (lhs[i] < rhs[i]) {
                 return true;
@@ -119,6 +125,42 @@ struct tuple_indexed_less {
         return false;
     }
 };
+
+struct tuple_indexed_less2 {
+
+    // u64 *index_columns;
+    tuple_size_t index_column_size;
+    int arity;
+
+    tuple_indexed_less2(tuple_size_t index_column_size, int arity) {
+        // this->index_columns = index_columns;
+        this->index_column_size = index_column_size;
+        this->arity = arity;
+    }
+
+    __host__ __device__ bool operator()(const tuple_type &lhs,
+                                        const tuple_type &rhs) {
+        // fetch the index
+        // compare hash first, could be index very different but share the same
+        // hash
+        // same hash
+        if (lhs == 0) {
+            return false;
+        }
+        if (rhs == 0) {
+            return true;
+        }
+        if (lhs[0] < rhs[0]) {
+            return true;
+        } else if (lhs[0] > rhs[0]) {
+            return false;
+        } else {
+            return lhs[1] < rhs[1];
+        }
+        return false;
+    }
+};
+
 
 struct tuple_weak_less {
 

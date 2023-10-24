@@ -4,6 +4,7 @@
 #include "../include/relation.cuh"
 #include "../include/timer.cuh"
 #include "../include/tuple.cuh"
+#include <chrono>
 #include <iostream>
 #include <thrust/sort.h>
 #include <thrust/unique.h>
@@ -32,19 +33,25 @@ __global__ void calculate_index_hash(GHashRelContainer *target,
                 bool collison_flag = false;
                 while (true) {
                     if (existing_value < i) {
-                        // occupied entry, but no need for swap, just check if collision
-                        if (!tuple_eq(target->tuples[existing_value], cur_tuple, target->index_column_size)) {
+                        // occupied entry, but no need for swap, just check if
+                        // collision
+                        if (!tuple_eq(target->tuples[existing_value], cur_tuple,
+                                      target->index_column_size)) {
                             // collision, find nex available entry
                             collison_flag = true;
                             break;
                         } else {
-                            // no collision but existing tuple is smaller, in this case, not need to swap, just return(break; break)
+                            // no collision but existing tuple is smaller, in
+                            // this case, not need to swap, just return(break;
+                            // break)
                             break;
                         }
                     }
-                    if (existing_value > i && existing_value != EMPTY_HASH_ENTRY) {
+                    if (existing_value > i &&
+                        existing_value != EMPTY_HASH_ENTRY) {
                         // occupied entry, may need for swap
-                        if (!tuple_eq(target->tuples[existing_value], cur_tuple, target->index_column_size)) {
+                        if (!tuple_eq(target->tuples[existing_value], cur_tuple,
+                                      target->index_column_size)) {
                             // collision, find nex available entry
                             collison_flag = true;
                             break;
@@ -62,7 +69,7 @@ __global__ void calculate_index_hash(GHashRelContainer *target,
                                       existing_value, i);
                     }
                 }
-                if(!collison_flag){
+                if (!collison_flag) {
                     break;
                 }
             }
@@ -138,6 +145,76 @@ __global__ void init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
     int stride = blockDim.x * gridDim.x;
     for (tuple_size_t i = index; i < rows; i += stride) {
         tuples[i] = raw_data + i * arity;
+    }
+}
+
+__global__ void get_join_result_size2(GHashRelContainer *inner_table,
+                                     GHashRelContainer *outer_table1,
+                                     GHashRelContainer *outertable2,
+                                     int join_column_counts,
+                                     tuple_generator_hook tp_gen,
+                                     tuple_predicate tp_pred,
+                                     tuple_size_t *join_result_size) {
+    u64 index = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (index >= outer_table1->tuple_counts)
+        return;
+    u64 stride = blockDim.x * gridDim.x;
+
+    for (tuple_size_t i = index; i < outer_table1->tuple_counts; i += stride) {
+        tuple_type outer_tuple = outer_table1->tuples[i];
+
+        tuple_size_t current_size = 0;
+        join_result_size[i] = 0;
+        u64 hash_val = prefix_hash(outer_tuple, outer_table1->index_column_size);
+        // the index value "pointer" position in the index hash table
+        tuple_size_t index_position = hash_val % inner_table->index_map_size;
+        bool index_not_exists = false;
+        while (true) {
+            if (inner_table->index_map[index_position].key == hash_val &&
+                tuple_eq(
+                    outer_tuple,
+                    inner_table
+                        ->tuples[inner_table->index_map[index_position].value],
+                    outer_table1->index_column_size)) {
+                break;
+            } else if (inner_table->index_map[index_position].key ==
+                       EMPTY_HASH_ENTRY) {
+                index_not_exists = true;
+                break;
+            }
+            index_position = (index_position + 1) % inner_table->index_map_size;
+        }
+        if (index_not_exists) {
+            continue;
+        }
+        // pull all joined elements
+        tuple_size_t position = inner_table->index_map[index_position].value;
+        while (true) {
+            tuple_type cur_inner_tuple = inner_table->tuples[position];
+            bool cmp_res = tuple_eq(inner_table->tuples[position], outer_tuple,
+                                    join_column_counts);
+            if (cmp_res) {
+                // hack to apply filter
+                // TODO: this will cause max arity of a relation is 20
+                if (tp_gen != nullptr && tp_pred != nullptr) {
+                    column_type tmp[20] = {0};
+                    (*tp_gen)(cur_inner_tuple, outer_tuple, tmp);
+                    if ((*tp_pred)(tmp)) {
+                        current_size++;
+                    }
+                } else {
+                    current_size++;
+                }
+            } else {
+                break;
+            }
+            position = position + 1;
+            if (position > inner_table->tuple_counts - 1) {
+                // end of data arrary
+                break;
+            }
+        }
+        join_result_size[i] = current_size;
     }
 }
 
@@ -325,24 +402,114 @@ __global__ void get_copy_result(tuple_type *src_tuples,
     }
 }
 
-void Relation::flush_delta(int grid_size, int block_size) {
-    tuple_size_t new_full_size = current_full_size + delta->tuple_counts;
-    // std::cout << new_full_size << std::endl;
+void Relation::flush_delta(int grid_size, int block_size, float *detail_time) {
+    if (delta->tuple_counts == 0) {
+        return;
+    }
+    KernelTimer timer;
+    timer.start_timer();
     tuple_type *tuple_full_buf;
-    u64 tuple_full_buf_mem_size = new_full_size * sizeof(tuple_type);
-    checkCuda(cudaMalloc((void **)&tuple_full_buf, tuple_full_buf_mem_size));
-    checkCuda(cudaMemset(tuple_full_buf, 0, tuple_full_buf_mem_size));
-    checkCuda(cudaDeviceSynchronize());
+    tuple_size_t new_full_size = current_full_size + delta->tuple_counts;
+
+    bool extened_mem = false;
+
+    tuple_size_t total_mem_size = get_total_memory();
+    tuple_size_t free_mem = get_free_memory();
+    u64 delta_mem_size = delta->tuple_counts * sizeof(tuple_type);
+    int multiplier = FULL_BUFFER_VEC_MULTIPLIER;
+    if (!pre_allocated_merge_buffer_flag && !fully_disable_merge_buffer_flag &&
+        delta_mem_size * multiplier <= 0.1 * free_mem) {
+        std::cout << "reenable pre-allocated merge buffer" << std::endl;
+        pre_allocated_merge_buffer_flag = true;
+    }
+
+    if (!fully_disable_merge_buffer_flag && pre_allocated_merge_buffer_flag) {
+        if (tuple_merge_buffer_size <= new_full_size) {
+            if (tuple_merge_buffer != nullptr) {
+                checkCuda(cudaFree(tuple_merge_buffer));
+                tuple_merge_buffer = nullptr;
+            }
+            std::cout << "extend mem" << std::endl;
+            extened_mem = true;
+            tuple_merge_buffer_size =
+                current_full_size + (delta->tuple_counts * multiplier);
+            u64 tuple_full_buf_mem_size =
+                tuple_merge_buffer_size * sizeof(tuple_type);
+
+            while (((free_mem - tuple_full_buf_mem_size) * 1.0 /
+                    total_mem_size) < 0.4 &&
+                   delta_mem_size * multiplier > 0.1 * free_mem) {
+                std::cout << "multiplier : " << multiplier << std::endl;
+                multiplier--;
+                tuple_merge_buffer_size =
+                    current_full_size + (delta->tuple_counts * multiplier);
+                tuple_full_buf_mem_size =
+                    tuple_merge_buffer_size * sizeof(tuple_type);
+                if (multiplier == 2) {
+                    std::cout << "not enough memory for merge buffer"
+                              << std::endl;
+                    // not enough space for pre-allocated buffer
+                    pre_allocated_merge_buffer_flag = false;
+                    tuple_merge_buffer_size = 0;
+                    // cudaFree(tuple_merge_buffer);
+                    checkCuda(cudaMalloc((void **)&tuple_full_buf,
+                                         tuple_full_buf_mem_size));
+                    break;
+                }
+            }
+            if (pre_allocated_merge_buffer_flag) {
+                checkCuda(cudaMalloc((void **)&tuple_merge_buffer,
+                                     tuple_full_buf_mem_size));
+                tuple_full_buf = tuple_merge_buffer;
+            }
+        } else {
+            tuple_full_buf = tuple_merge_buffer;
+        }
+    } else {
+        tuple_merge_buffer_size = current_full_size + delta->tuple_counts;
+        u64 tuple_full_buf_mem_size =
+            tuple_merge_buffer_size * sizeof(tuple_type);
+        checkCuda(
+            cudaMalloc((void **)&tuple_full_buf, tuple_full_buf_mem_size));
+        // checkCuda(cudaMemset(tuple_full_buf, 0, tuple_full_buf_mem_size));
+        // checkCuda(cudaDeviceSynchronize());
+    }
+    // std::cout << new_full_size << std::endl;
+
+    timer.stop_timer();
+    // std::cout << "malloc time : " << timer.get_spent_time() << std::endl;
+    detail_time[0] = timer.get_spent_time();
+
+    timer.start_timer();
     tuple_type *end_tuple_full_buf = thrust::merge(
-        thrust::device,
-        delta->tuples, delta->tuples + delta->tuple_counts,
-        tuple_full, tuple_full + current_full_size,
-        tuple_full_buf,
+        thrust::device, tuple_full, tuple_full + current_full_size,
+        delta->tuples, delta->tuples + delta->tuple_counts, tuple_full_buf,
         tuple_indexed_less(delta->index_column_size, delta->arity));
-    checkCuda(cudaDeviceSynchronize());
-    current_full_size = end_tuple_full_buf - tuple_full_buf;
-    checkCuda(cudaFree(tuple_full));
-    tuple_full = tuple_full_buf;
+    timer.stop_timer();
+    // std::cout << "merge time : " << timer.get_spent_time() << std::endl;
+    detail_time[1] = timer.get_spent_time();
+    // checkCuda(cudaDeviceSynchronize());
+    current_full_size = new_full_size;
+
+    timer.start_timer();
+    if (!fully_disable_merge_buffer_flag && pre_allocated_merge_buffer_flag) {
+        auto old_full = tuple_full;
+        tuple_full = tuple_merge_buffer;
+        tuple_merge_buffer = old_full;
+        if (extened_mem) {
+            checkCuda(cudaFree(tuple_merge_buffer));
+            tuple_merge_buffer = nullptr;
+            u64 tuple_full_buf_mem_size =
+                tuple_merge_buffer_size * sizeof(tuple_type);
+            checkCuda(cudaMalloc((void **)&tuple_merge_buffer,
+                                 tuple_full_buf_mem_size));
+        }
+    } else {
+        checkCuda(cudaFree(tuple_full));
+        tuple_full = tuple_full_buf;
+    }
+    timer.stop_timer();
+    detail_time[2] = timer.get_spent_time();
     buffered_delta_vectors.push_back(delta);
     full->tuples = tuple_full;
     full->tuple_counts = current_full_size;
@@ -409,7 +576,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
             thrust::sort(thrust::device, target->tuples,
                          target->tuples + data_row_size,
                          tuple_indexed_less(index_column_size, arity));
-            checkCuda(cudaDeviceSynchronize());
+            // checkCuda(cudaDeviceSynchronize());
         }
         // print_tuple_rows(target, "after sort");
         timer.stop_timer();
@@ -419,7 +586,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
         tuple_type *new_end =
             thrust::unique(thrust::device, target->tuples,
                            target->tuples + data_row_size, t_equal(arity));
-        checkCuda(cudaDeviceSynchronize());
+        // checkCuda(cudaDeviceSynchronize());
         data_row_size = new_end - target->tuples;
         timer.stop_timer();
         detail_time[1] = timer.get_spent_time();
@@ -579,6 +746,7 @@ void reload_full_temp(GHashRelContainer *target, int arity, tuple_type *tuples,
     checkCuda(cudaMalloc((void **)&target_device, sizeof(GHashRelContainer)));
     checkCuda(cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
                          cudaMemcpyHostToDevice));
+    checkCuda(cudaDeviceSynchronize());
     init_index_map<<<grid_size, block_size>>>(target_device);
     checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
