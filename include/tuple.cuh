@@ -21,6 +21,7 @@ using tuple_size_t = u64;
 using t_data_internal = u64 *;
 
 typedef void (*tuple_generator_hook)(tuple_type, tuple_type, tuple_type);
+typedef void (*tuple_3ary_generator_hook)(tuple_type, tuple_type, tuple_type, tuple_type);
 typedef void (*tuple_copy_hook)(tuple_type, tuple_type);
 typedef bool (*tuple_predicate)(tuple_type);
 

@@ -56,6 +56,51 @@ struct RelationalJoin {
     void operator()();
 };
 
+struct RelationalJoin3ary {
+
+    // relation to compare, this relation must has index
+    Relation *inner1_rel;
+    RelationVersion inner1_ver;
+    Relation *inner2_rel;
+    RelationVersion inner2_ver;
+    // serialized relation, every tuple in this relation will be iterated and
+    // joined with tuples in inner relation
+    Relation *outer_rel;
+    RelationVersion outer_ver;
+
+    // the relation to store the generated join result
+    Relation *output_rel;
+    // hook function will be mapped on every join result tuple
+    tuple_3ary_generator_hook tuple_generator;
+    // filter to be applied on every join result tuple
+    tuple_predicate tuple_pred;
+
+    // TODO: reserved for optimization
+    JoinDirection direction;
+    int grid_size;
+    int block_size;
+
+    // flag for benchmark, this will disable sorting on result
+    bool disable_load = false;
+
+    // join time for debug and profiling
+    float *detail_time;
+
+    RelationalJoin3ary(Relation *inner1_rel, RelationVersion inner1_ver,
+                       Relation *inner2_rel, RelationVersion inner2_ver,
+                       Relation *outer_rel, RelationVersion outer_ver,
+                       Relation *output_rel, tuple_3ary_generator_hook tp_gen,
+                       tuple_predicate tp_pred, JoinDirection direction,
+                       int grid_size, int block_size, float *detail_time)
+        : inner1_rel(inner1_rel), inner1_ver(inner1_ver),
+          inner2_rel(inner2_rel), inner2_ver(inner2_ver), outer_rel(outer_rel),
+          outer_ver(outer_ver), output_rel(output_rel), tuple_generator(tp_gen),
+          tuple_pred(tp_pred), direction(direction), grid_size(grid_size),
+          block_size(block_size), detail_time(detail_time){};
+
+    void operator()();
+};
+
 /**
  * @brief Relation Algerbra kernal for PROJECTION Π
  *
@@ -110,7 +155,7 @@ struct RelationalACopy {
 
 /**
  * @brief possible RA types
- * 
+ *
  */
 using ra_op = std::variant<RelationalJoin, RelationalCopy, RelationalACopy>;
 

@@ -148,6 +148,13 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
                                      tuple_generator_hook tp_gen,
                                      tuple_predicate tp_pred,
                                      tuple_size_t *join_result_size);
+__global__ void get_join_result_size3(GHashRelContainer *inner1_table,
+                                      GHashRelContainer *inner2_table,
+                                      GHashRelContainer *outer_table,
+                                      int join_column_counts,
+                                      tuple_3ary_generator_hook tp_gen,
+                                      tuple_predicate tp_pred,
+                                      tuple_size_t *join_result_size);
 
 /**
  * @brief compute the join result
@@ -163,10 +170,16 @@ __global__ void get_join_result_size(GHashRelContainer *inner_table,
  */
 __global__ void
 get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
-                int join_column_counts, tuple_generator_hook tp_gen,
+                int join_column_counts, tuple_3ary_generator_hook tp_gen,
                 tuple_predicate tp_pred, int output_arity,
                 column_type *output_raw_data, tuple_size_t *res_count_array,
                 tuple_size_t *res_offset, JoinDirection direction);
+__global__ void get_join_result3(
+    GHashRelContainer *inner1_table, GHashRelContainer *inner2_table,
+    GHashRelContainer *outer_table, int join_column_counts,
+    tuple_generator_hook tp_gen, tuple_predicate tp_pred, int output_arity,
+    column_type *output_raw_data, tuple_size_t *res_count_array,
+    tuple_size_t *res_offset, JoinDirection direction);
 
 __global__ void flatten_tuples_raw_data(tuple_type *tuple_pointers,
                                         column_type *raw,

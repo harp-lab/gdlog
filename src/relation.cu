@@ -148,13 +148,14 @@ __global__ void init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
     }
 }
 
-__global__ void get_join_result_size2(GHashRelContainer *inner_table,
-                                     GHashRelContainer *outer_table1,
-                                     GHashRelContainer *outertable2,
-                                     int join_column_counts,
-                                     tuple_generator_hook tp_gen,
-                                     tuple_predicate tp_pred,
-                                     tuple_size_t *join_result_size) {
+// TODO: mod this
+__global__ void get_join_result_size3(GHashRelContainer *inner1_table,
+                                      GHashRelContainer *inner2_table,
+                                      GHashRelContainer *outer_table,
+                                      int join_column_counts,
+                                      tuple_3ary_generator_hook tp_gen,
+                                      tuple_predicate tp_pred,
+                                      tuple_size_t *join_result_size) {
     u64 index = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (index >= outer_table1->tuple_counts)
         return;
@@ -165,51 +166,49 @@ __global__ void get_join_result_size2(GHashRelContainer *inner_table,
 
         tuple_size_t current_size = 0;
         join_result_size[i] = 0;
-        u64 hash_val = prefix_hash(outer_tuple, outer_table1->index_column_size);
+        u64 hash_val =
+            prefix_hash(outer_tuple, outer_table1->index_column_size);
         // the index value "pointer" position in the index hash table
-        tuple_size_t index_position = hash_val % inner_table->index_map_size;
+        tuple_size_t index_position = hash_val % inner1_table->index_map_size;
         bool index_not_exists = false;
         while (true) {
-            if (inner_table->index_map[index_position].key == hash_val &&
+            if (inner1_table->index_map[index_position].key == hash_val &&
                 tuple_eq(
                     outer_tuple,
-                    inner_table
-                        ->tuples[inner_table->index_map[index_position].value],
+                    inner1_table
+                        ->tuples[inner1_table->index_map[index_position].value],
                     outer_table1->index_column_size)) {
                 break;
-            } else if (inner_table->index_map[index_position].key ==
+            } else if (inner1_table->index_map[index_position].key ==
                        EMPTY_HASH_ENTRY) {
                 index_not_exists = true;
                 break;
             }
-            index_position = (index_position + 1) % inner_table->index_map_size;
+            index_position = (index_position + 1) % inner1_table->index_map_size;
         }
         if (index_not_exists) {
             continue;
         }
         // pull all joined elements
-        tuple_size_t position = inner_table->index_map[index_position].value;
+        tuple_size_t position = inner1_table->index_map[index_position].value;
         while (true) {
-            tuple_type cur_inner_tuple = inner_table->tuples[position];
-            bool cmp_res = tuple_eq(inner_table->tuples[position], outer_tuple,
+            tuple_type cur_inner1_tuple = inner1_table->tuples[position];
+            bool cmp_res = tuple_eq(inner1_table->tuples[position], outer_tuple,
                                     join_column_counts);
             if (cmp_res) {
                 // hack to apply filter
-                // TODO: this will cause max arity of a relation is 20
                 if (tp_gen != nullptr && tp_pred != nullptr) {
-                    column_type tmp[20] = {0};
-                    (*tp_gen)(cur_inner_tuple, outer_tuple, tmp);
-                    if ((*tp_pred)(tmp)) {
-                        current_size++;
-                    }
+                    // leave it empty
                 } else {
-                    current_size++;
+                    // TODO: change here to join with inner2
+                    // current_size++;
+                    
                 }
             } else {
                 break;
             }
             position = position + 1;
-            if (position > inner_table->tuple_counts - 1) {
+            if (position > inner1_table->tuple_counts - 1) {
                 // end of data arrary
                 break;
             }
@@ -354,6 +353,84 @@ get_join_result(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
                     }
                 } else {
                     (*tp_gen)(inner_tuple, outer_tuple, new_tuple);
+                    current_new_tuple_cnt++;
+                }
+                if (current_new_tuple_cnt > res_count_array[i]) {
+                    break;
+                }
+            } else {
+                // bucket end
+                break;
+            }
+            position = position + 1;
+            if (position > (inner_table->tuple_counts - 1)) {
+                // end of data arrary
+                break;
+            }
+        }
+    }
+}
+
+__global__ void
+get_join_result3(GHashRelContainer *inner_table, GHashRelContainer *outer_table,
+                 int join_column_counts, tuple_3ary_generator_hook tp_gen,
+                 tuple_predicate tp_pred, int output_arity,
+                 column_type *output_raw_data, tuple_size_t *res_count_array,
+                 tuple_size_t *res_offset, JoinDirection direction) {
+    int index = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (index >= outer_table->tuple_counts)
+        return;
+
+    int stride = blockDim.x * gridDim.x;
+
+    for (tuple_size_t i = index; i < outer_table->tuple_counts; i += stride) {
+        if (res_count_array[i] == 0) {
+            continue;
+        }
+        tuple_type outer_tuple = outer_table->tuples[i];
+
+        int current_new_tuple_cnt = 0;
+        u64 hash_val = prefix_hash(outer_tuple, outer_table->index_column_size);
+        // the index value "pointer" position in the index hash table
+        tuple_size_t index_position = hash_val % inner_table->index_map_size;
+        bool index_not_exists = false;
+        while (true) {
+            if (inner_table->index_map[index_position].key == hash_val &&
+                tuple_eq(
+                    outer_tuple,
+                    inner_table
+                        ->tuples[inner_table->index_map[index_position].value],
+                    outer_table->index_column_size)) {
+                break;
+            } else if (inner_table->index_map[index_position].key ==
+                       EMPTY_HASH_ENTRY) {
+                index_not_exists = true;
+                break;
+            }
+            index_position = (index_position + 1) % inner_table->index_map_size;
+        }
+        if (index_not_exists) {
+            continue;
+        }
+
+        // pull all joined elements
+        tuple_size_t position = inner_table->index_map[index_position].value;
+        while (true) {
+            bool cmp_res = tuple_eq(inner_table->tuples[position], outer_tuple,
+                                    join_column_counts);
+            if (cmp_res) {
+                // tuple prefix match, join here
+                tuple_type inner_tuple = inner_table->tuples[position];
+                tuple_type new_tuple =
+                    output_raw_data +
+                    (res_offset[i] + current_new_tuple_cnt) * output_arity;
+
+                // for (int j = 0; j < output_arity; j++) {
+                if (tp_gen != nullptr && tp_pred != nullptr) {
+                    // leave it empty
+                } else {
+                    // TODO: keey join with inner 2
+                    // (*tp_gen)(inner_tuple, outer_tuple, new_tuple);
                     current_new_tuple_cnt++;
                 }
                 if (current_new_tuple_cnt > res_count_array[i]) {

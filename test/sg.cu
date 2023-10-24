@@ -58,7 +58,6 @@ column_type *get_relation_from_file(const char *file_path, int total_rows,
 
 //////////////////////////////////////////////////////////////////
 
-
 __device__ void reorder_path(tuple_type inner, tuple_type outer,
                              tuple_type newt) {
     newt[0] = inner[1];
@@ -71,15 +70,16 @@ __device__ void reorder_path1(tuple_type inner, tuple_type outer,
 };
 
 // sg(x, y) :-  edge(a, x), edge(b, y), sg(a, b)
-// __device__ void reorder_path1_3arity(tuple_type inner1, tuple_type inner2, tuple_type outer,
-//                                      tuple_type newt) {
-//     newt[0] = inner1[1];
-//     newt[1] = inner2[1];
-// };
+__device__ void reorder_path1_3arity(tuple_type inner1, tuple_type inner2,
+                                     tuple_type outer, tuple_type newt) {
+    newt[0] = inner1[1];
+    newt[1] = inner2[1];
+};
 
-// __device__ tuple_generator_hook reorder_path_device = reorder_path;
-// __device__ tuple_generator_hook reorder_path1_device = reorder_path1;
-// __device__ tuple_generator_hook reorder_path1_3arity_device = reorder_path1_3arity;
+__device__ tuple_generator_hook reorder_path_device = reorder_path;
+__device__ tuple_generator_hook reorder_path1_device = reorder_path1;
+__device__ tuple_generator_hook reorder_path1_3arity_device =
+    reorder_path1_3arity;
 
 __device__ void cp_1(tuple_type src, tuple_type dest) {
     dest[0] = src[1];
@@ -154,25 +154,38 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     std::cout << "sg init time: " << timer.get_spent_time() << std::endl;
 
     LIE sg_lie(grid_size, block_size);
-    Relation *tmp = new Relation();
-    load_relation(tmp, "tmp", 2, nullptr, 0, 1, 0, grid_size, block_size);
-    tmp->index_flag = false;
+    // Relation *tmp = new Relation();
+    // load_relation(tmp, "tmp", 2, nullptr, 0, 1, 0, grid_size, block_size);
+    // tmp->index_flag = false;
     sg_lie.add_relations(edge_2__1_2, true);
     sg_lie.add_relations(sg_2__1_2, false);
 
-    sg_lie.add_tmp_relation(tmp);
+    // sg_lie.add_tmp_relation(tmp);
     // sg(x, y) :- edge(a, x), sg(a, b), edge(b, y).
     // tmp(b,x) :- edge(a, x), sg(a, b).
-    tuple_generator_hook reorder_path1_host;
-    cudaMemcpyFromSymbol(&reorder_path1_host, reorder_path1_device,
-                         sizeof(tuple_generator_hook));
-    sg_lie.add_ra(RelationalJoin(edge_2__1_2, FULL, sg_2__1_2, DELTA, tmp,
-                                 reorder_path1_host, nullptr, LEFT, grid_size,
-                                 block_size, join_detail));
-    // sg(x, y) :- edge(b, y), tmp(b, x).
-    sg_lie.add_ra(RelationalJoin(edge_2__1_2, FULL, tmp, NEWT, sg_2__1_2,
-                                 reorder_path1_host, nullptr, LEFT, grid_size,
-                                 block_size, join_detail));
+    // tuple_generator_hook reorder_path1_host;
+    // cudaMemcpyFromSymbol(&reorder_path1_host, reorder_path1_device,
+    //                      sizeof(tuple_generator_hook));
+    // sg_lie.add_ra(RelationalJoin(edge_2__1_2, FULL, sg_2__1_2, DELTA, tmp,
+    //                              reorder_path1_host, nullptr, LEFT, grid_size,
+    //                              block_size, join_detail));
+    // // sg(x, y) :- edge(b, y), tmp(b, x).
+    // sg_lie.add_ra(RelationalJoin(edge_2__1_2, FULL, tmp, NEWT, sg_2__1_2,
+    //                              reorder_path1_host, nullptr, LEFT, grid_size,
+    //                              block_size, join_detail));
+
+    // TODO: use k-ary join
+    // copy hook to CPU
+    // add RA use k-ary version join object
+    tuple_3ary_generator_hook reorder_path1_3arity_host;
+    cudaMemcpyFromSymbol(&reorder_path1_3arity_host,
+                         reorder_path1_3arity_device,
+                         sizeof(tuple_3ary_generator_hook));
+    sg_lie.add_ra(RelationalJoin3(edge_2__1_2, FULL, edge_2__1_2, FULL,
+                                  sg_2__1_2, DELTA, sg_2__1_2,
+                                  reorder_path1_3arity_host, nullptr, LEFT,
+                                  grid_size, block_size, join_detail));
+
     timer.start_timer();
     sg_lie.fixpoint_loop();
     timer.stop_timer();
