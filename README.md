@@ -87,7 +87,22 @@ Error in fe_body. Message: std::bad_alloc: out_of_memory: CUDA error at: /__w/rm
 Error in loc-Brightkite. Message: std::bad_alloc: out_of_memory: CUDA error at: /__w/rmm/rmm/include/rmm/mr/device/cuda_memory_resource.hpp:70: cudaErrorMemoryAllocation out of memory
 Error in fe_sphere. Message: std::bad_alloc: out_of_memory: CUDA error at: /__w/rmm/rmm/include/rmm/mr/device/cuda_memory_resource.hpp:70: cudaErrorMemoryAllocation out of memory
 | CA-HepTh | 51971 | 74618689 | 9 | 21.241212 |
-...
+| Dataset | Number of rows | SG size | Iterations | Time (s) |
+| --- | --- | --- | --- | --- |
+| ego-Facebook | 88234 | 15018986 | 13 | 19.074940 |
+| wiki-Vote | 103689 | 5376338 | 4 | 2.603751 |
+| luxembourg_osm | 119666 | 245221 | 326 | 2.215113 |
+| cti | 48232 | 14503742 | 44 | 3.857438 |
+| fe_ocean | 409593 | 65941441 | 77 | 45.979235 |
+| wing | 121544 | 647999 | 8 | 0.204277 |
+| delaunay_n16 | 196575 | 25994011 | 85 | 14.832548 |
+Error in usroads. Message: std::bad_alloc: out_of_memory: CUDA error at: /__w/rmm/rmm/include/rmm/mr/device/cuda_memory_resource.hpp:70: cudaErrorMemoryAllocation out of memory
+Error in p2p-Gnutella31. Message: std::bad_alloc: out_of_memory: CUDA error at: /__w/rmm/rmm/include/rmm/mr/device/cuda_memory_resource.hpp:70: cudaErrorMemoryAllocation out of memory
+| p2p-Gnutella09 | 26013 | 62056583 | 14 | 13.705286 |
+| p2p-Gnutella04 | 39994 | 116931333 | 18 | 48.947088 |
+| cal.cedge | 21693 | 23519 | 58 | 0.259069 |
+| TG.cedge | 23874 | 608090 | 54 | 0.719743 |
+| OL.cedge | 7035 | 285431 | 56 | 0.385674 |
 ```
 
 ### Examples

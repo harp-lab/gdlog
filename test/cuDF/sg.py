@@ -111,7 +111,7 @@ if __name__ == "__main__":
         "loc-Brightkite": "../../data/data_214078.txt",
         "fe_sphere": "../../data/data_49152.txt",
         "CA-HepTh": "../../data/data_51971.txt",
-        "SF.cedge": "../../data/data_223001.txt",
+        # "SF.cedge": "../../data/data_223001.txt",
         "ego-Facebook": "../../data/data_88234.txt",
         "wiki-Vote": "../../data/data_103689.txt",
         "luxembourg_osm": "../../data/data_119666.txt",
