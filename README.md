@@ -69,19 +69,25 @@ TC time: 0.668892
 ========= ERROR SUMMARY: 0 errors
 ```
 
-### Out of memory error:
-- If the program terminates with the following error, it means that the GPU memory is not sufficient to store the graph data:
+### Run cuDF on Polaris
 ```shell
-arsho::x3004c0s7b0n0 { ~/slog-gpu-backend/build }-> ./TC ../data/data_68993773.txt
-num of sm 108
-using 18446744073709551615 as empty hash entry
-Input graph rows: 68993773
-reversing graph ... 
-finish reverse graph.
-edge size 68993773
-Build hash table time: 0.551132
-start lie .... 
-GPUassert: an illegal memory access was encountered /home/arsho/slog-gpu-backend/src/relational_algebra.cu 78
+ssh <USERNAME>@polaris.alcf.anl.gov
+qsub -I -l select=1 -l filesystems=home:grand:eagle -l walltime=1:00:00 -q debug -A dist_relational_alg
+module purge
+module load conda/2023-10-04
+conda activate
+pip install --extra-index-url https://pypi.nvidia.com cudf-cu11
+python test/cuDF/sg.py
+
+(2022-09-08/base) arsho::x3004c0s7b0n0 { ~/slog-gpu-backend/test/cuDF }-> python sg.py
+| Dataset | Number of rows | SG size | Iterations | Time (s) |
+| --- | --- | --- | --- | --- |
+| hipc | 5 | 4 | 3 | 0.016371 |
+Error in fe_body. Message: std::bad_alloc: out_of_memory: CUDA error at: /__w/rmm/rmm/include/rmm/mr/device/cuda_memory_resource.hpp:70: cudaErrorMemoryAllocation out of memory
+Error in loc-Brightkite. Message: std::bad_alloc: out_of_memory: CUDA error at: /__w/rmm/rmm/include/rmm/mr/device/cuda_memory_resource.hpp:70: cudaErrorMemoryAllocation out of memory
+Error in fe_sphere. Message: std::bad_alloc: out_of_memory: CUDA error at: /__w/rmm/rmm/include/rmm/mr/device/cuda_memory_resource.hpp:70: cudaErrorMemoryAllocation out of memory
+| CA-HepTh | 51971 | 74618689 | 9 | 21.241212 |
+...
 ```
 
 ### Examples
