@@ -1,5 +1,3 @@
-## SLOG GPU Backend
-Some prototypes for slog's gpu backend
 
 ## Datasets
 - Datasets are listed in [data folder](data).
