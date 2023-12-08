@@ -77,8 +77,8 @@ __device__ void reorder_path1(tuple_type inner, tuple_type outer,
 //     newt[1] = inner2[1];
 // };
 
-// __device__ tuple_generator_hook reorder_path_device = reorder_path;
-// __device__ tuple_generator_hook reorder_path1_device = reorder_path1;
+__device__ tuple_generator_hook reorder_path_device = reorder_path;
+__device__ tuple_generator_hook reorder_path1_device = reorder_path1;
 // __device__ tuple_generator_hook reorder_path1_3arity_device = reorder_path1_3arity;
 
 __device__ void cp_1(tuple_type src, tuple_type dest) {
