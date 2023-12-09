@@ -1,6 +1,7 @@
 #include "../include/print.cuh"
 #include <iostream>
 #include <thrust/sort.h>
+#include "../include/exception.cuh"
 
 void print_hashes(GHashRelContainer *target, const char *rel_name) {
     MEntity *host_map;
@@ -18,15 +19,18 @@ void print_hashes(GHashRelContainer *target, const char *rel_name) {
     cudaFreeHost(host_map);
 }
 
-void print_tuple_rows(GHashRelContainer* target, const char *rel_name) {
+void print_tuple_rows(GHashRelContainer* target, const char *rel_name, bool sort_flag) {
     // sort first
     tuple_type* natural_ordered;
+    if (sort_flag) {
     cudaMalloc((void**) &natural_ordered, target->tuple_counts * sizeof(tuple_type));
     cudaMemcpy(natural_ordered, target->tuples, target->tuple_counts * sizeof(tuple_type),
                cudaMemcpyDeviceToDevice);
     thrust::sort(thrust::device, natural_ordered, natural_ordered+target->tuple_counts,
                  tuple_weak_less(target->arity));
-
+    } else {
+        natural_ordered = target->tuples;
+    }
     tuple_type* tuples_host;
     cudaMallocHost((void**) &tuples_host, target->tuple_counts * sizeof(tuple_type));
     cudaMemcpy(tuples_host, natural_ordered, target->tuple_counts * sizeof(tuple_type),
@@ -39,6 +43,10 @@ void print_tuple_rows(GHashRelContainer* target, const char *rel_name) {
     }
     for (tuple_size_t i = 0; i < pt_size; i++) {
         tuple_type cur_tuple = tuples_host[i];
+        if (cur_tuple == nullptr) {
+            std::cout << "null tuple" << std::endl;
+            continue;
+        }
         
         tuple_type cur_tuple_host;
         cudaMallocHost((void**) &cur_tuple_host, target->arity * sizeof(column_type));
@@ -48,7 +56,6 @@ void print_tuple_rows(GHashRelContainer* target, const char *rel_name) {
         //     continue;
         // }
         for (int j = 0; j < target->arity; j++) {
-
             std::cout << cur_tuple_host[j] << "\t";
         }
         std::cout << std::endl;
@@ -57,10 +64,13 @@ void print_tuple_rows(GHashRelContainer* target, const char *rel_name) {
     if (target->tuple_counts > 3000) {
         std::cout << "........." << std::endl;
     }
-    std::cout << "end <<<" << std::endl;
 
     cudaFreeHost(tuples_host);
-    cudaFree(natural_ordered);
+    if (sort_flag) {
+    checkCuda(cudaFree(natural_ordered));
+    }
+    std::cout << "end <<<" << std::endl;
+
 }
 
 void print_tuple_raw_data(GHashRelContainer* target, const char *rel_name) {

@@ -836,3 +836,48 @@ void load_relation(Relation *target, std::string name, int arity,
                             index_column_size, dependent_column_size, 0.8,
                             grid_size, block_size, detail_time);
 }
+
+__global__ void find_duplicate_tuples(GHashRelContainer *target,
+                                      tuple_type *new_tuples,
+                                      tuple_size_t new_tuple_counts,
+                                      bool *duplicate_bitmap,
+                                      tuple_size_t *duplicate_counts) {
+    tuple_size_t index = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (index >= new_tuple_counts)
+        return;
+
+    tuple_size_t stride = blockDim.x * gridDim.x;
+    for (tuple_size_t i = index; i < new_tuple_counts; i += stride) {
+        tuple_type cur_tuple = new_tuples[i];
+
+        u64 hash_val = prefix_hash(cur_tuple, target->index_column_size);
+        tuple_size_t position = hash_val % target->index_map_size;
+        u64 existing_key = target->index_map[position].key;
+        auto cur_target_pos = target->index_map[position].value;
+        if (existing_key == EMPTY_HASH_ENTRY) {
+            continue;
+        } 
+        if (cur_target_pos == EMPTY_HASH_ENTRY) {
+            continue;
+        }
+        // if (existing_key == hash_val) {
+        while (true) {
+            auto cur_target_tuple =
+                target->tuples[cur_target_pos];
+
+            // printf("cur_target_tuple: %d %d\n", cur_target_tuple[0], cur_target_tuple[1]);
+            if (hash_val !=
+                prefix_hash(cur_target_tuple, 1)) {
+                break;
+            }
+            if (tuple_eq(cur_tuple, cur_target_tuple, target->arity)) {
+                // duplicate_bitmap[i] = true;
+                // atomicAdd(duplicate_counts, 1);
+                new_tuples[i] = nullptr;
+                break;
+            }
+            cur_target_pos = (cur_target_pos + 1) % target->tuple_counts;
+        }
+        // }
+    }
+}

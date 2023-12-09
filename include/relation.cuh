@@ -2,6 +2,7 @@
 #include "tuple.cuh"
 #include <string>
 #include <vector>
+#include <thrust/tuple.h>
 
 #ifndef RADIX_SORT_THRESHOLD
 #define RADIX_SORT_THRESHOLD 0
@@ -177,9 +178,30 @@ __global__ void get_copy_result(tuple_type *src_tuples,
                                 tuple_size_t tuple_counts,
                                 tuple_copy_hook tp_gen);
 
+__global__ void find_duplicate_tuples(GHashRelContainer *target,
+                                      tuple_type *new_tuples,
+                                      tuple_size_t new_tuple_counts,
+                                      bool *duplicate_bitmap,
+                                      tuple_size_t *duplicate_counts);
+
+// __global__ void remove_duplicate_tuples(GHashRelContainer *target,
+//                                         tuple_type *new_tuples,
+//                                         tuple_size_t new_tuple_counts,
+//                                         bool *duplicate_bitmap,
+//                                         tuple_size_t *duplicate_counts);
+
+// struct is_dup {
+//     bool *duplicate_bitmap;
+
+//     is_dup(bool *duplicate_bitmap) : duplicate_bitmap(duplicate_bitmap){};
+
+//     __device__ bool operator()(thrust::tuple<tuple_type, bool> t) {
+//         return thrust::get<1>(t);
+//     }
+// };
+
 //////////////////////////////////////////////////////
 // CPU functions
-
 /**
  * @brief load raw data into relation container
  *

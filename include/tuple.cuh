@@ -170,7 +170,9 @@ struct tuple_weak_less {
 
     __host__ __device__ bool operator()(const tuple_type &lhs,
                                         const tuple_type &rhs) {
-
+        if (lhs == nullptr) {
+            return false;
+        }
         for (u64 i = 0; i < arity; i++) {
             if (lhs[i] < rhs[i]) {
                 return true;
