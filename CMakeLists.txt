@@ -51,6 +51,10 @@ file(GLOB source_file_merge
     "${test_dir}/merge.cu"
 )
 
+file(GLOB source_file_dedup
+    "${test_dir}/dedup.cu"
+)
+
 add_library(gpu_ra "${source_file_gpu_ra}")
 target_compile_features(gpu_ra PUBLIC cxx_std_20)
 set_target_properties(gpu_ra PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
@@ -89,3 +93,8 @@ add_executable(MERGE ${source_file_merge})
 target_link_libraries(MERGE gpu_ra)
 target_compile_features(MERGE PUBLIC cxx_std_20)
 set_target_properties(MERGE PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+
+add_executable(DEDUP ${source_file_dedup})
+target_link_libraries(DEDUP gpu_ra)
+target_compile_features(DEDUP PUBLIC cxx_std_20)
+set_target_properties(DEDUP PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

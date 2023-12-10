@@ -16,6 +16,8 @@
 #include "../include/print.cuh"
 #include "../include/timer.cuh"
 
+#define MAX_ITERATION 10
+
 long int get_row_size(const char *data_path) {
     std::ifstream f;
     f.open(data_path);
@@ -132,7 +134,7 @@ int main(int argc, char *argv[]) {
     load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
                   graph_edge_counts, 1, 0, grid_size, block_size);
     LIE tc_scc(grid_size, block_size);
-    tc_scc.max_iteration = 277;
+    tc_scc.max_iteration = MAX_ITERATION;
     tc_scc.reload_full_flag = false;
     tc_scc.add_relations(edge_2__2_1, true);
     tc_scc.add_relations(path_2__1_2, false);

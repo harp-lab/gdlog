@@ -455,19 +455,19 @@ int main(int argc, char *argv[]) {
     cudaMemset(newt_bitmap, 0, path_2__1_2->newt->tuple_counts * sizeof(bool));
     std::cout << "newt tuple counts " << path_2__1_2->newt->tuple_counts
               << std::endl;
-    print_tuple_rows(path_2__1_2->newt, "newt :");
-    print_tuple_rows(path_2__1_2->full, "full :");
+    // print_tuple_rows(path_2__1_2->newt, "newt :");
+    // print_tuple_rows(path_2__1_2->full, "full :");
+
     cudaDeviceSynchronize();
     for (int i = 0; i < REPEAT; i++) {
         find_duplicate_tuples<<<grid_size, block_size>>>(
             fullt_device, path_2__1_2->newt->tuples,
-            path_2__1_2->newt->tuple_counts, nullptr, duplicate_counts);
+            path_2__1_2->newt->tuple_counts, newt_bitmap, duplicate_counts);
         checkCuda(cudaDeviceSynchronize());
 
-        print_tuple_rows(path_2__1_2->newt, "newt after dedup :", false);
-        
-        checkCuda(cudaMemcpy(duplicate_counts_host, duplicate_counts, sizeof(tuple_size_t), cudaMemcpyDeviceToHost));
-        std::cout << "duplicate counts: " << *duplicate_counts_host << std::endl;
+        // print_tuple_rows(path_2__1_2->newt, "newt after dedup :", false);        
+        // checkCuda(cudaMemcpy(duplicate_counts_host, duplicate_counts, sizeof(tuple_size_t), cudaMemcpyDeviceToHost));
+        // std::cout << "duplicate counts: " << *duplicate_counts_host << std::endl;
 
         thrust::remove_copy(thrust::device, path_2__1_2->newt->tuples,
                             path_2__1_2->newt->tuples +
