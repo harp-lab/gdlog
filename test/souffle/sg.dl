@@ -3,12 +3,12 @@
 .input edge(IO=file, filename="../../data/data_39994.txt", deliminator="\t")
 
 .decl sg(x: number, y: number)
-.decl sg_init(x: number, y: number)
-sg_init(x, y) :- edge(p, x), edge(p, y), x != y.
+// .decl sg_init(x: number, y: number)
+// sg_init(x, y) :- edge(p, x), edge(p, y), x != y.
 
 
 sg(x, y) :- edge(p, x), edge(p, y), x != y.
 sg(x, y) :- edge(a, x), sg(a, b), edge(b, y).
 
 .printsize sg
-.printsize sg_init
+// .printsize sg_init

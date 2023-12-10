@@ -5,6 +5,7 @@ CompileFlags:
     - --generate-code*
   Add:
     - -xcuda
+    - -std=c++20
     - --cuda-gpu-arch=sm_60
     - --cuda-path=/opt/cuda
     - -L/opt/cuda/lib

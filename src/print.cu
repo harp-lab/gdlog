@@ -95,6 +95,34 @@ void print_memory_usage(){
     }
 }
 
+tuple_size_t get_free_memory() {
+    int num_gpus;
+    size_t free, total;
+    cudaGetDeviceCount( &num_gpus );
+    for ( int gpu_id = 0; gpu_id < num_gpus; gpu_id++ ) {
+        cudaSetDevice( gpu_id );
+        int id;
+        cudaGetDevice( &id );
+        cudaMemGetInfo( &free, &total );
+        return free;
+    }
+    return 0;
+}
+
+tuple_size_t get_total_memory() {
+    int num_gpus;
+    size_t free, total;
+    cudaGetDeviceCount( &num_gpus );
+    for ( int gpu_id = 0; gpu_id < num_gpus; gpu_id++ ) {
+        cudaSetDevice( gpu_id );
+        int id;
+        cudaGetDevice( &id );
+        cudaMemGetInfo( &free, &total );
+        return total;
+    }
+    return 0;
+}
+
 void print_tuple_list(tuple_type* tuples, tuple_size_t rows, tuple_size_t arity) {
     tuple_type* tuples_host;
     cudaMallocHost((void**) &tuples_host, rows * sizeof(tuple_type));

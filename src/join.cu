@@ -62,15 +62,18 @@ void RelationalJoin::operator()() {
                          outer->tuple_counts * sizeof(tuple_size_t)));
 
     // print_tuple_rows(outer, "inber");
-    checkCuda(cudaDeviceSynchronize());
+    // checkCuda(cudaDeviceSynchronize());
     timer.start_timer();
+    checkCuda(cudaDeviceSynchronize());
     get_join_result_size<<<grid_size, block_size>>>(
         inner_device, outer_device, outer->index_column_size, tuple_generator,
         tuple_pred, result_counts_array);
     checkCuda(cudaGetLastError());
     checkCuda(cudaDeviceSynchronize());
+    timer.stop_timer();
     this->detail_time[0] += timer.get_spent_time();
 
+    timer.start_timer();
     tuple_size_t total_result_rows = 0;
     for (tuple_size_t i = 0; i < outer->tuple_counts; i = i + MAX_REDUCE_SIZE) {
         tuple_size_t reduce_size = MAX_REDUCE_SIZE;
@@ -81,8 +84,9 @@ void RelationalJoin::operator()() {
             thrust::device, result_counts_array + i,
             result_counts_array + i + reduce_size, 0);
         total_result_rows += reduce_v;
+        // checkCuda(cudaDeviceSynchronize());
     }
-    checkCuda(cudaDeviceSynchronize());
+    
     std::cout << output_rel->name << "   " << outer->index_column_size
               << " join result size(non dedup) " << total_result_rows
               << std::endl;
@@ -166,7 +170,7 @@ void RelationalJoin::operator()() {
             detail_time[3] += load_relation_container_time[0];
             detail_time[4] += load_relation_container_time[1];
             detail_time[5] += load_relation_container_time[2];
-            checkCuda(cudaDeviceSynchronize());
+            // checkCuda(cudaDeviceSynchronize());
             tuple_type *tp_buffer;
             u64 tp_buffer_mem_size =
                 (newt_tmp->tuple_counts + old_newt->tuple_counts) *
@@ -180,7 +184,7 @@ void RelationalJoin::operator()() {
                 old_newt->tuples + old_newt->tuple_counts, tp_buffer,
                 tuple_indexed_less(output_rel->index_column_size,
                                    output_rel->arity));
-            checkCuda(cudaDeviceSynchronize());
+            // checkCuda(cudaDeviceSynchronize());
             timer.stop_timer();
             detail_time[6] += timer.get_spent_time();
             // cudaFree(newt_tmp->tuples);
