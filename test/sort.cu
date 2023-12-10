@@ -18,6 +18,7 @@
 #include "../include/exception.cuh"
 
 #define EMPTY_HASH_ENTRY ULLONG_MAX
+#define REPEAT 10
 
 using u64 = unsigned long long;
 using u32 = unsigned long;
@@ -273,7 +274,6 @@ int main(int argc, char *argv[]) {
                graph_edge_counts * relation_columns * sizeof(column_type),
                cudaMemcpyHostToDevice);
 
-    int REPEAT = 1;
     // init the tuples
     tuple_type *tuples;
     cudaMalloc(&tuples, graph_edge_counts * sizeof(tuple_type));
@@ -410,7 +410,7 @@ int main(int argc, char *argv[]) {
     cudaMalloc(&deduped_tuples,
                path_2__1_2->newt->tuple_counts * sizeof(tuple_type));
     time_point_begin = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < REPEAT; i++) {
         thrust::set_difference(
             thrust::device, path_2__1_2->newt->tuples,
             path_2__1_2->newt->tuples + path_2__1_2->newt->tuple_counts,
@@ -458,7 +458,7 @@ int main(int argc, char *argv[]) {
     print_tuple_rows(path_2__1_2->newt, "newt :");
     print_tuple_rows(path_2__1_2->full, "full :");
     cudaDeviceSynchronize();
-    // for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < REPEAT; i++) {
         find_duplicate_tuples<<<grid_size, block_size>>>(
             fullt_device, path_2__1_2->newt->tuples,
             path_2__1_2->newt->tuple_counts, nullptr, duplicate_counts);
@@ -473,7 +473,7 @@ int main(int argc, char *argv[]) {
                             path_2__1_2->newt->tuples +
                                 path_2__1_2->newt->tuple_counts,
                             deduped_tuples_n, nullptr);
-    // }
+    }
     time_point_end = std::chrono::high_resolution_clock::now();
     cudaFree(newt_bitmap);
     double find_duplicate_time =
