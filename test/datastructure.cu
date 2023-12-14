@@ -95,11 +95,11 @@ void datastructure_bench(const char *dataset_path, int block_size,
                graph_edge_counts * sizeof(tuple_type));
     init_tuples_unsorted<<<grid_size, block_size>>>(
         raw_graph_data_gpu_tuple, raw_graph_data_gpu, 2, graph_edge_counts);
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     thrust::sort(thrust::device, raw_graph_data_gpu_tuple,
                  raw_graph_data_gpu_tuple + graph_edge_counts,
                  tuple_indexed_less(1, 2));
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     column_type *raw_graph_data_gpu_sorted;
     cudaMalloc((void **)&raw_graph_data_gpu_sorted,
                graph_edge_counts * 2 * sizeof(column_type));

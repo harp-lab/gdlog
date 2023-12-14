@@ -472,7 +472,7 @@ void Relation::flush_delta(int grid_size, int block_size, float *detail_time) {
         checkCuda(
             cudaMalloc((void **)&tuple_full_buf, tuple_full_buf_mem_size));
         // checkCuda(cudaMemset(tuple_full_buf, 0, tuple_full_buf_mem_size));
-        // checkCuda(cudaDeviceSynchronize());
+        // checkCuda(cudaStreamSynchronize(0));
     }
     // std::cout << new_full_size << std::endl;
 
@@ -488,7 +488,7 @@ void Relation::flush_delta(int grid_size, int block_size, float *detail_time) {
     timer.stop_timer();
     // std::cout << "merge time : " << timer.get_spent_time() << std::endl;
     detail_time[1] = timer.get_spent_time();
-    // checkCuda(cudaDeviceSynchronize());
+    // checkCuda(cudaStreamSynchronize(0));
     current_full_size = new_full_size;
 
     timer.start_timer();
@@ -557,14 +557,14 @@ void load_relation_container(GHashRelContainer *target, int arity,
         // init tuple to be unsorted raw tuple data address
         u64 target_tuples_mem_size = data_row_size * sizeof(tuple_type);
         checkCuda(cudaMalloc((void **)&target->tuples, target_tuples_mem_size));
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         checkCuda(cudaMemset(target->tuples, 0, target_tuples_mem_size));
         // std::cout << "grid size : " << grid_size << "    " << block_size <<
         // std::endl;
         init_tuples_unsorted<<<grid_size, block_size>>>(
             target->tuples, target->data_raw, arity, data_row_size);
         checkCuda(cudaGetLastError());
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
     }
     // sort raw data
     if (!sorted_flag) {
@@ -576,7 +576,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
             thrust::sort(thrust::device, target->tuples,
                          target->tuples + data_row_size,
                          tuple_indexed_less(index_column_size, arity));
-            // checkCuda(cudaDeviceSynchronize());
+            // checkCuda(cudaStreamSynchronize(0));
         }
         // print_tuple_rows(target, "after sort");
         timer.stop_timer();
@@ -586,7 +586,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
         tuple_type *new_end =
             thrust::unique(thrust::device, target->tuples,
                            target->tuples + data_row_size, t_equal(arity));
-        // checkCuda(cudaDeviceSynchronize());
+        // checkCuda(cudaStreamSynchronize(0));
         data_row_size = new_end - target->tuples;
         timer.stop_timer();
         detail_time[1] = timer.get_spent_time();
@@ -616,7 +616,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
                              cudaMemcpyHostToDevice));
         init_index_map<<<grid_size, block_size>>>(target_device);
         checkCuda(cudaGetLastError());
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         // std::cout << "finish init index map" << std::endl;
         // print_hashes(target, "after construct index map");
         // calculate hash
@@ -624,7 +624,7 @@ void load_relation_container(GHashRelContainer *target, int arity,
             target_device,
             tuple_indexed_less(target->index_column_size, target->arity));
         checkCuda(cudaGetLastError());
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         checkCuda(cudaFree(target_device));
         timer.stop_timer();
         detail_time[2] = timer.get_spent_time();
@@ -657,14 +657,14 @@ void repartition_relation_index(GHashRelContainer *target, int arity,
     // init tuple to be unsorted raw tuple data address
     u64 target_tuples_mem_size = data_row_size * sizeof(tuple_type);
     checkCuda(cudaMalloc((void **)&target->tuples, target_tuples_mem_size));
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     checkCuda(cudaMemset(target->tuples, 0, target_tuples_mem_size));
     // std::cout << "grid size : " << grid_size << "    " << block_size <<
     // std::endl;
     init_tuples_unsorted<<<grid_size, block_size>>>(
         target->tuples, target->data_raw, arity, data_row_size);
     checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
 
     timer.start_timer();
     if (arity <= RADIX_SORT_THRESHOLD) {
@@ -675,7 +675,7 @@ void repartition_relation_index(GHashRelContainer *target, int arity,
                      target->tuples + data_row_size,
                      tuple_indexed_less(index_column_size, arity));
 
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
     }
     // print_tuple_rows(target, "after sort");
     timer.stop_timer();
@@ -706,7 +706,7 @@ void repartition_relation_index(GHashRelContainer *target, int arity,
                          cudaMemcpyHostToDevice));
     init_index_map<<<grid_size, block_size>>>(target_device);
     checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     // std::cout << "finish init index map" << std::endl;
     // print_hashes(target, "after construct index map");
     // calculate hash
@@ -714,7 +714,7 @@ void repartition_relation_index(GHashRelContainer *target, int arity,
         target_device,
         tuple_indexed_less(target->index_column_size, target->arity));
     checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     checkCuda(cudaFree(target_device));
     timer.stop_timer();
     detail_time[2] = timer.get_spent_time();
@@ -746,10 +746,10 @@ void reload_full_temp(GHashRelContainer *target, int arity, tuple_type *tuples,
     checkCuda(cudaMalloc((void **)&target_device, sizeof(GHashRelContainer)));
     checkCuda(cudaMemcpy(target_device, target, sizeof(GHashRelContainer),
                          cudaMemcpyHostToDevice));
-    checkCuda(cudaDeviceSynchronize());
+    // checkCuda(cudaStreamSynchronize(0));
     init_index_map<<<grid_size, block_size>>>(target_device);
     checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(CU_STREAM_PER_THREAD));
     // std::cout << "finish init index map" << std::endl;
     // print_hashes(target, "after construct index map");
     // calculate hash
@@ -757,7 +757,7 @@ void reload_full_temp(GHashRelContainer *target, int arity, tuple_type *tuples,
         target_device,
         tuple_indexed_less(target->index_column_size, target->arity));
     checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(CU_STREAM_PER_THREAD));
     checkCuda(cudaFree(target_device));
 }
 

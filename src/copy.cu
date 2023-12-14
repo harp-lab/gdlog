@@ -10,7 +10,7 @@
 #include "../include/timer.cuh"
 
 void RelationalCopy::operator()() {
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     GHashRelContainer *src;
     if (src_ver == DELTA) {
         src = src_rel->delta;
@@ -36,7 +36,7 @@ void RelationalCopy::operator()() {
                                                output_arity, src->tuple_counts,
                                                tuple_generator);
     checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     float load_relation_container_time[5] = {0, 0, 0, 0, 0};
 
     if (dest->tuples == nullptr || dest->tuple_counts == 0) {
@@ -52,7 +52,7 @@ void RelationalCopy::operator()() {
             tmp, dest->arity, copied_raw_data, src->tuple_counts,
             src->index_column_size, dest->dependent_column_size, 0.8, grid_size,
             block_size, load_relation_container_time, true, false, false);
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         // merge to newt
         GHashRelContainer *old_newt = dest;
         tuple_type *tp_buffer;
@@ -65,12 +65,12 @@ void RelationalCopy::operator()() {
             old_newt->tuples + old_newt->tuple_counts, tmp->tuples,
             tmp->tuples + tmp->tuple_counts, tp_buffer,
             tuple_indexed_less(dest->index_column_size, output_arity));
-        // checkCuda(cudaDeviceSynchronize());
+        // checkCuda(cudaStreamSynchronize(0));
         // checkCuda(cudaFree(tmp->tuples));
         // checkCuda(cudaFree(old_newt->tuples));
         tp_buffer_end = thrust::unique(thrust::device, tp_buffer, tp_buffer_end,
                                        t_equal(output_arity));
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         tuple_size_t new_newt_counts = tp_buffer_end - tp_buffer;
         // std::cout << " >>>>>>>>>> " << new_newt_counts << std::endl;
         column_type *new_newt_raw;
@@ -80,7 +80,7 @@ void RelationalCopy::operator()() {
         flatten_tuples_raw_data<<<grid_size, block_size>>>(
             tp_buffer, new_newt_raw, new_newt_counts, output_arity);
         checkCuda(cudaGetLastError());
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         checkCuda(cudaFree(tp_buffer));
         free_relation_container(old_newt);
         free_relation_container(tmp);

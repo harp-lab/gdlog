@@ -1,0 +1,21 @@
+Bootstrap: docker
+From: nvidia/cuda:12.3.1-devel-ubuntu22.04
+Stage: spython-base
+
+%files
+. /gdlog
+%post
+
+apt-get update && apt-get install -y build-essential git cmake wget curl vim
+
+rm -rf /gdlog/build
+cd /gdlog && cmake -Bbuild . && cd build && make -j8
+
+mkdir -p /gdlog/build/bin
+cd /gdlog/build/bin
+%runscript
+cd /gdlog/build/bin
+exec /bin/bash "$@"
+%startscript
+cd /gdlog/build/bin
+exec /bin/bash "$@"

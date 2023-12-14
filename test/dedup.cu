@@ -169,7 +169,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     tuple_type *dedup_buf;
     cudaMalloc((void **)&dedup_buf,
                path_2__1_2->newt->tuple_counts * sizeof(tuple_type));
-    cudaDeviceSynchronize();
+    cudaStreamSynchronize(0);
     double dedup_time_set_difference = 0;
     for (int i = 0; i < REPEAT; i++) {
         timer.start_timer();
@@ -207,7 +207,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
         find_duplicate_tuples<<<grid_size, block_size>>>(
             fullt_device, tuple_newt, path_2__1_2->newt->tuple_counts, nullptr,
             nullptr);
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         thrust::unique(thrust::device, tuple_newt,
                        tuple_newt + path_2__1_2->newt->tuple_counts);
         timer.stop_timer();

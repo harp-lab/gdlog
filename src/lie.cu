@@ -3,11 +3,13 @@
 #include "../include/lie.cuh"
 #include "../include/print.cuh"
 #include "../include/timer.cuh"
+// #include <future>
 #include <iostream>
+#include <map>
+#include <thread>
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
-
 #include <variant>
 
 void LIE::add_ra(ra_op op) { ra_ops.push_back(op); }
@@ -54,19 +56,46 @@ void LIE::fixpoint_loop() {
                              cudaMemcpyDeviceToDevice));
         rel->current_full_size = rel->full->tuple_counts;
         copy_relation_container(rel->delta, rel->full, grid_size, block_size);
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         // std::cout << "wwwwwwwwww" << rel->delta->tuple_counts << std::endl;
     }
+    std::map<Relation *, std::thread> updated_res_map;
 
     while (true) {
         for (auto &ra_op : ra_ops) {
             timer.start_timer();
-            std::visit(dynamic_dispatch{[](RelationalJoin &op) {
+            std::visit(dynamic_dispatch{[&](RelationalJoin &op) {
                                             // timer.start_timer();
+                                            if (updated_res_map.find(op.inner_rel) !=
+                                                updated_res_map.end()) {
+                                                // std::cout << "wait for "
+                                                //           << op.inner_rel->name
+                                                //           << std::endl;
+                                                if (updated_res_map[op.inner_rel].joinable()) {
+                                                    updated_res_map[op.inner_rel].join();
+                                                }
+                                                updated_res_map.erase(op.inner_rel);
+                                            }
                                             op();
                                         },
-                                        [](RelationalACopy &op) { op(); },
-                                        [](RelationalCopy &op) {
+                                        [&](RelationalACopy &op) {
+                                            if (updated_res_map.find(op.src_rel) !=
+                                                updated_res_map.end()) {
+                                                if (updated_res_map[op.src_rel].joinable()) {
+                                                    updated_res_map[op.src_rel].join();
+                                                }
+                                                updated_res_map.erase(op.src_rel);
+                                            }
+                                            op();
+                                        },
+                                        [&](RelationalCopy &op) {
+                                            if (updated_res_map.find(op.src_rel) !=
+                                                updated_res_map.end()) {
+                                                if (updated_res_map[op.src_rel].joinable()) {
+                                                    updated_res_map[op.src_rel].join();
+                                                }
+                                                updated_res_map.erase(op.src_rel);
+                                            }
                                             if (op.src_ver == FULL) {
                                                 if (!op.copied) {
                                                     op();
@@ -136,7 +165,7 @@ void LIE::fixpoint_loop() {
                 tuple_indexed_less(rel->full->index_column_size,
                                    rel->full->arity -
                                        rel->dependent_column_size));
-            // checkCuda(cudaDeviceSynchronize());
+            // checkCuda(cudaStreamSynchronize(0));
             tuple_size_t deduplicate_size =
                 deuplicated_end - deduplicated_newt_tuples;
 
@@ -145,7 +174,12 @@ void LIE::fixpoint_loop() {
             }
             timer.stop_timer();
             set_diff_time += timer.get_spent_time();
-
+            if (updated_res_map.find(rel) != updated_res_map.end()) {
+                if (updated_res_map[rel].joinable()) {
+                    updated_res_map[rel].join();
+                }
+                updated_res_map.erase(rel);
+            }
             column_type *deduplicated_raw;
             u64 dedeuplicated_raw_mem_size =
                 deduplicate_size * rel->newt->arity * sizeof(column_type);
@@ -157,7 +191,7 @@ void LIE::fixpoint_loop() {
                 deduplicated_newt_tuples, deduplicated_raw, deduplicate_size,
                 rel->newt->arity);
             checkCuda(cudaGetLastError());
-            checkCuda(cudaDeviceSynchronize());
+            checkCuda(cudaStreamSynchronize(0));
             checkCuda(cudaFree(deduplicated_newt_tuples));
 
             free_relation_container(rel->newt);
@@ -172,7 +206,7 @@ void LIE::fixpoint_loop() {
                 rel->full->dependent_column_size,
                 rel->full->index_map_load_factor, grid_size, block_size,
                 load_detail_time, true, true, true);
-            // checkCuda(cudaDeviceSynchronize());
+            // checkCuda(cudaStreamSynchronize(0));
             timer.stop_timer();
             rebuild_delta_time += timer.get_spent_time();
             rebuild_rel_sort_time += load_detail_time[0];
@@ -183,6 +217,9 @@ void LIE::fixpoint_loop() {
             float flush_detail_time[5] = {0, 0, 0, 0, 0};
             timer.start_timer();
             rel->flush_delta(grid_size, block_size, flush_detail_time);
+            // updated_res_map[rel] = std::thread([&]() {
+            //     rel->flush_delta(grid_size, block_size, flush_detail_time);
+            // });
             timer.stop_timer();
             merge_time += flush_detail_time[1];
             memory_alloc_time += flush_detail_time[0];
@@ -196,15 +233,15 @@ void LIE::fixpoint_loop() {
                       << " delta tuple size: " << rel->delta->tuple_counts
                       << " full counts " << rel->current_full_size << std::endl;
         }
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         std::cout << "Iteration " << iteration_counter << " finish populating"
                   << std::endl;
         print_memory_usage();
         std::cout << "Join time: " << join_time
-              << " ; merge full time: " << merge_time
-              << " ; memory alloc time: " << memory_alloc_time
-              << " ; rebuild delta time: " << rebuild_delta_time
-              << " ; set diff time: " << set_diff_time << std::endl;
+                  << " ; merge full time: " << merge_time
+                  << " ; memory alloc time: " << memory_alloc_time
+                  << " ; rebuild delta time: " << rebuild_delta_time
+                  << " ; set diff time: " << set_diff_time << std::endl;
         iteration_counter++;
         // if (iteration_counter >= 3) {
         //     break;
@@ -214,53 +251,63 @@ void LIE::fixpoint_loop() {
             break;
         }
     }
+
+    for (auto& [rel, thread] : updated_res_map) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+
     // merge full after reach fixpoint
     timer.start_timer();
     if (reload_full_flag) {
         std::cout << "Start merge full" << std::endl;
-    for (Relation *rel : update_relations) {
-        // if (rel->current_full_size <= rel->full->tuple_counts) {
-        //     continue;
-        // }
-        column_type *new_full_raw_data;
-        u64 new_full_raw_data_mem_size =
-            rel->current_full_size * rel->full->arity * sizeof(column_type);
-        checkCuda(cudaMalloc((void **)&new_full_raw_data,
-                             new_full_raw_data_mem_size));
-        checkCuda(cudaMemset(new_full_raw_data, 0, new_full_raw_data_mem_size));
-        flatten_tuples_raw_data<<<grid_size, block_size>>>(
-            rel->tuple_full, new_full_raw_data, rel->current_full_size,
-            rel->full->arity);
-        checkCuda(cudaGetLastError());
-        checkCuda(cudaDeviceSynchronize());
-        // cudaFree(tuple_merge_buffer);
-        float load_detail_time[5] = {0, 0, 0, 0, 0};
-        load_relation_container(
-            rel->full, rel->full->arity, new_full_raw_data,
-            rel->current_full_size, rel->full->index_column_size,
-            rel->full->dependent_column_size, rel->full->index_map_load_factor,
-            grid_size, block_size, load_detail_time, true, true, true);
-        checkCuda(cudaDeviceSynchronize());
-        rebuild_rel_sort_time += load_detail_time[0];
-        rebuild_rel_unique_time += load_detail_time[1];
-        rebuild_rel_index_time += load_detail_time[2];
-        std::cout << "Finished! " << rel->name << " has "
-                  << rel->full->tuple_counts << std::endl;
-        for (auto &delta_b : rel->buffered_delta_vectors) {
-            free_relation_container(delta_b);
+        for (Relation *rel : update_relations) {
+            // if (rel->current_full_size <= rel->full->tuple_counts) {
+            //     continue;
+            // }
+            column_type *new_full_raw_data;
+            u64 new_full_raw_data_mem_size =
+                rel->current_full_size * rel->full->arity * sizeof(column_type);
+            checkCuda(cudaMalloc((void **)&new_full_raw_data,
+                                 new_full_raw_data_mem_size));
+            checkCuda(
+                cudaMemset(new_full_raw_data, 0, new_full_raw_data_mem_size));
+            flatten_tuples_raw_data<<<grid_size, block_size>>>(
+                rel->tuple_full, new_full_raw_data, rel->current_full_size,
+                rel->full->arity);
+            checkCuda(cudaGetLastError());
+            checkCuda(cudaStreamSynchronize(0));
+            // cudaFree(tuple_merge_buffer);
+            float load_detail_time[5] = {0, 0, 0, 0, 0};
+            load_relation_container(
+                rel->full, rel->full->arity, new_full_raw_data,
+                rel->current_full_size, rel->full->index_column_size,
+                rel->full->dependent_column_size,
+                rel->full->index_map_load_factor, grid_size, block_size,
+                load_detail_time, true, true, true);
+            checkCuda(cudaStreamSynchronize(0));
+            rebuild_rel_sort_time += load_detail_time[0];
+            rebuild_rel_unique_time += load_detail_time[1];
+            rebuild_rel_index_time += load_detail_time[2];
+            std::cout << "Finished! " << rel->name << " has "
+                      << rel->full->tuple_counts << std::endl;
+            for (auto &delta_b : rel->buffered_delta_vectors) {
+                free_relation_container(delta_b);
+            }
+            free_relation_container(rel->delta);
+            free_relation_container(rel->newt);
         }
-        free_relation_container(rel->delta);
-        free_relation_container(rel->newt);
-    }
     } else {
         for (Relation *rel : update_relations) {
             std::cout << "Finished! " << rel->name << " has "
-                  << rel->full->tuple_counts << std::endl;
+                      << rel->full->tuple_counts << std::endl;
         }
     }
     timer.stop_timer();
     float merge_full_time = timer.get_spent_time();
 
+    cudaDeviceSynchronize();
     std::cout << "Join time: " << join_time
               << " ; merge full time: " << merge_time
               << " ; rebuild full time: " << merge_full_time

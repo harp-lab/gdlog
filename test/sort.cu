@@ -282,7 +282,7 @@ int main(int argc, char *argv[]) {
         init_tuples_unsorted<<<grid_size, block_size>>>(
             tuples, d_graph_data, relation_columns, graph_edge_counts);
     }
-    cudaDeviceSynchronize();
+    cudaStreamSynchronize(0);
     time_point_end = std::chrono::high_resolution_clock::now();
     spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
                      time_point_end - time_point_begin)
@@ -298,7 +298,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < REPEAT; i++) {
         compute_hash<<<grid_size, block_size>>>(tuples, graph_edge_counts, 1,
                                                 tuple_hashvs);
-        cudaDeviceSynchronize();
+        cudaStreamSynchronize(0);
     }
     time_point_end = std::chrono::high_resolution_clock::now();
     spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
@@ -313,21 +313,21 @@ int main(int argc, char *argv[]) {
 
         extract_column<<<grid_size, block_size>>>(tuples, graph_edge_counts, 1,
                                                   col_tmp);
-        cudaDeviceSynchronize();
+        cudaStreamSynchronize(0);
         thrust::stable_sort_by_key(thrust::device, col_tmp,
                                    col_tmp + graph_edge_counts, tuples);
-        cudaDeviceSynchronize();
+        cudaStreamSynchronize(0);
         extract_column<<<grid_size, block_size>>>(tuples, graph_edge_counts, 0,
                                                   col_tmp);
-        cudaDeviceSynchronize();
+        cudaStreamSynchronize(0);
         thrust::stable_sort_by_key(thrust::device, col_tmp,
                                    col_tmp + graph_edge_counts, tuples);
         compute_hash<<<grid_size, block_size>>>(tuples, graph_edge_counts, 1,
                                                 tuple_hashvs);
-        cudaDeviceSynchronize();
+        cudaStreamSynchronize(0);
         thrust::stable_sort_by_key(thrust::device, tuple_hashvs,
                                    tuple_hashvs + graph_edge_counts, tuples);
-        cudaDeviceSynchronize();
+        cudaStreamSynchronize(0);
         time_point_end = std::chrono::high_resolution_clock::now();
         sort_hash_time +=
             std::chrono::duration_cast<std::chrono::duration<double>>(
@@ -346,7 +346,7 @@ int main(int argc, char *argv[]) {
         time_point_begin = std::chrono::high_resolution_clock::now();
         thrust::sort(thrust::device, tuples, tuples + graph_edge_counts,
                      tuple_indexed_less(1, 2));
-        cudaDeviceSynchronize();
+        cudaStreamSynchronize(0);
         time_point_end = std::chrono::high_resolution_clock::now();
         sort_comp_time +=
             std::chrono::duration_cast<std::chrono::duration<double>>(
@@ -417,7 +417,7 @@ int main(int argc, char *argv[]) {
             path_2__1_2->full->tuples,
             path_2__1_2->full->tuples + path_2__1_2->full->tuple_counts,
             deduped_tuples, tuple_indexed_less(1, 2));
-        cudaDeviceSynchronize();
+        cudaStreamSynchronize(0);
     }
     time_point_end = std::chrono::high_resolution_clock::now();
     double set_difference_time =
@@ -442,7 +442,7 @@ int main(int argc, char *argv[]) {
     cudaMallocHost(&duplicate_counts_host, sizeof(tuple_size_t));
     cudaMalloc(&duplicate_counts, sizeof(tuple_size_t));
     checkCuda(cudaMemset(duplicate_counts, 0, sizeof(tuple_size_t)));
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     checkCuda(cudaGetLastError());
     GHashRelContainer* fullt_device;
     cudaMalloc(&fullt_device, sizeof(GHashRelContainer));
@@ -458,12 +458,12 @@ int main(int argc, char *argv[]) {
     // print_tuple_rows(path_2__1_2->newt, "newt :");
     // print_tuple_rows(path_2__1_2->full, "full :");
 
-    cudaDeviceSynchronize();
+    cudaStreamSynchronize(0);
     for (int i = 0; i < REPEAT; i++) {
         find_duplicate_tuples<<<grid_size, block_size>>>(
             fullt_device, path_2__1_2->newt->tuples,
             path_2__1_2->newt->tuple_counts, newt_bitmap, duplicate_counts);
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
 
         // print_tuple_rows(path_2__1_2->newt, "newt after dedup :", false);        
         // checkCuda(cudaMemcpy(duplicate_counts_host, duplicate_counts, sizeof(tuple_size_t), cudaMemcpyDeviceToHost));
@@ -497,7 +497,7 @@ int main(int argc, char *argv[]) {
     //             thrust::device, path_2__1_2->full->tuples,
     //             path_2__1_2->full->tuples + path_2__1_2->full->tuple_counts,
     //             t_equal_n(path_2__1_2->arity, cur_newt_tuple));
-    //         cudaDeviceSynchronize();
+    //         cudaStreamSynchronize(0);
     //         if (res != full_t_end) {
     //             deduped_tuples_seq[i] = cur_newt_tuple;
     //         }

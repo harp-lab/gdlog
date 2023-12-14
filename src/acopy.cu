@@ -32,7 +32,7 @@ void RelationalACopy::operator()() {
                                                output_arity, src->tuple_counts,
                                                tuple_generator);
     checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
 
     free_relation_container(dest);
     float detail_time[5] = {0, 0, 0, 0, 0};
@@ -41,7 +41,7 @@ void RelationalACopy::operator()() {
                             src->tuple_counts, src->index_column_size,
                             dest->dependent_column_size, 0.8, grid_size,
                             block_size, detail_time, true, false, true);
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     // print_tuple_rows(dest, "delta");
     // merge delta to full immediately here
     // dest_rel->flush_delta(grid_size, block_size);

@@ -172,7 +172,7 @@ int main(int argc, char *argv[]) {
     tuple_type *dedup_buf;
     cudaMalloc((void **)&dedup_buf,
                path_2__1_2->current_full_size * sizeof(tuple_type));
-    cudaDeviceSynchronize();
+    cudaStreamSynchronize(0);
     tuple_type *dedup_buf_end = thrust::set_difference(
         thrust::device, path_2__1_2->newt->tuples,
         path_2__1_2->newt->tuples + path_2__1_2->newt->tuple_counts,
@@ -255,14 +255,14 @@ int main(int argc, char *argv[]) {
     //     if (i + merge_step > path_2__1_2->full->tuple_counts) {
     //         merge_size = path_2__1_2->full->tuple_counts - i;
     //     }
-    //     cudaDeviceSynchronize();
+    //     cudaStreamSynchronize(0);
     //     thrust::merge(thrust::device, path_2__1_2->tuple_full + i,
     //                   path_2__1_2->tuple_full + i + merge_size,
     //                   dedup_buf, dedup_buf_end, merge_buf,
     //                   tuple_indexed_less(path_2__1_2->full->index_column_size,
     //                        path_2__1_2->full->arity));
     // }
-    // cudaDeviceSynchronize();
+    // cudaStreamSynchronize(0);
     // time_point_end = std::chrono::high_resolution_clock::now();
     // spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
     //                  time_point_end - time_point_begin)
@@ -277,7 +277,7 @@ int main(int argc, char *argv[]) {
     // cudaMalloc((void **)&merge_buf_3, path_2__1_2->full->tuple_counts * sizeof(tuple_type));
     // tuple_size_t cur_merged_size = 0;
     // print_memory_usage();
-    // cudaDeviceSynchronize();
+    // cudaStreamSynchronize(0);
     // time_point_begin = std::chrono::high_resolution_clock::now();
     // for(tuple_size_t i = 0; i < path_2__1_2->full->tuple_counts; i += merge_step) {
     //     tuple_size_t merge_size = merge_step;
@@ -289,7 +289,7 @@ int main(int argc, char *argv[]) {
     //                   merge_buf_2, merge_buf_2 + cur_merged_size, merge_buf_2,
     //                   tuple_indexed_less(path_2__1_2->full->index_column_size,
     //                        path_2__1_2->full->arity));
-    //     cudaDeviceSynchronize();
+    //     cudaStreamSynchronize(0);
     //     cur_merged_size += merge_size;
     // }
     // time_point_end = std::chrono::high_resolution_clock::now();

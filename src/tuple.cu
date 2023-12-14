@@ -37,10 +37,10 @@ void sort_tuples(tuple_type *tuples, tuple_size_t rows, tuple_size_t arity,
     for (int k = arity - 1; k >= 0; k--) {
         extract_column<<<grid_size, block_size>>>(tuples, rows, k, col_tmp);
         checkCuda(cudaGetLastError());
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
         thrust::stable_sort_by_key(thrust::device, col_tmp, col_tmp + rows,
                                    tuples);
-        checkCuda(cudaDeviceSynchronize());
+        checkCuda(cudaStreamSynchronize(0));
     }
     cudaFree(col_tmp);
 }
@@ -53,8 +53,8 @@ void sort_tuple_by_hash(tuple_type *tuples, tuple_size_t rows,
     compute_hash<<<grid_size, block_size>>>(tuples, rows, index_column_size,
                                             col_tmp);
     checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     thrust::stable_sort_by_key(thrust::device, col_tmp, col_tmp + rows, tuples);
-    checkCuda(cudaDeviceSynchronize());
+    checkCuda(cudaStreamSynchronize(0));
     cudaFree(col_tmp);
 }

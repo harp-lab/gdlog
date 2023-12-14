@@ -5,6 +5,8 @@ set(gpu_ra_src "${PROJECT_SOURCE_DIR}/src")
 set(gpu_ra_include "${PROJECT_SOURCE_DIR}/include")
 set(test_dir "${PROJECT_SOURCE_DIR}/test")
 
+set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} $ENV{CUDA_NVCC_FLAGS} -lineinfo --default-stream per-thread")
+
 file(GLOB source_file_gpu_ra 
     "${gpu_ra_include}/exception.cuh"
     "${gpu_ra_include}/dynamic_dispatch.h"
