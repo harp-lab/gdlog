@@ -5,6 +5,7 @@
 #include <thrust/scan.h>
 #include <thrust/sort.h>
 #include <thrust/unique.h>
+#include <rmm/exec_policy.hpp>
 
 #include "../include/exception.cuh"
 #include "../include/print.cuh"
@@ -86,7 +87,7 @@ void RelationalJoin::compute_join(counting_buf_t &result_counts_buf,
             reduce_size = outer->tuple_counts - i;
         }
         tuple_size_t reduce_v =
-            thrust::reduce(thrust::device, result_counts_buf.begin() + i,
+            thrust::reduce(rmm::exec_policy(), result_counts_buf.begin() + i,
                            result_counts_buf.begin() + i + reduce_size, 0);
         total_result_rows += reduce_v;
     }
@@ -100,9 +101,9 @@ void RelationalJoin::compute_join(counting_buf_t &result_counts_buf,
               << std::endl;
     // print_memory_usage();
     result_offset_buf.resize(outer->tuple_counts);
-    thrust::copy(thrust::device, result_counts_buf.begin(),
+    thrust::copy(rmm::exec_policy(), result_counts_buf.begin(),
                  result_counts_buf.end(), result_offset_buf.begin());
-    thrust::exclusive_scan(thrust::device, result_offset_buf.begin(),
+    thrust::exclusive_scan(rmm::exec_policy(), result_offset_buf.begin(),
                            result_offset_buf.end(), result_offset_buf.begin());
     timer.stop_timer();
     detail_time[1] += timer.get_spent_time();

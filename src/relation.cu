@@ -12,6 +12,7 @@
 #include <thrust/sort.h>
 #include <thrust/transform.h>
 #include <thrust/unique.h>
+#include <rmm/exec_policy.hpp>
 
 __global__ void calculate_index_hash(tuple_type *tuples,
                                      tuple_size_t tuple_counts,
@@ -100,7 +101,7 @@ void init_tuples_unsorted_thrust(tuple_type *tuples, column_type *raw_data,
                                  int arity, tuple_size_t rows) {
     thrust::counting_iterator<tuple_size_t> index_sequence_begin(0);
     thrust::counting_iterator<tuple_size_t> index_sequence_end(rows);
-    thrust::transform(thrust::device,
+    thrust::transform(rmm::exec_policy(),
         index_sequence_begin,
         index_sequence_end,
         tuples,
@@ -296,7 +297,7 @@ void flatten_tuples_raw_data_thrust(tuple_type *tuple_pointers,
                                     int arity) {
     thrust::counting_iterator<tuple_size_t> index_sequence_begin(0);
     thrust::counting_iterator<tuple_size_t> index_sequence_end(tuple_counts);
-    thrust::for_each(thrust::device, index_sequence_begin, index_sequence_end,
+    thrust::for_each(rmm::exec_policy(), index_sequence_begin, index_sequence_end,
                      update_functor{tuple_pointers, raw, arity});
 }
 
@@ -383,7 +384,7 @@ void Relation::flush_delta(int grid_size, int block_size, float *detail_time) {
 
     timer.start_timer();
     thrust::merge(
-        thrust::device, full->tuples.begin(),
+        rmm::exec_policy(), full->tuples.begin(),
         full->tuples.begin() + full->tuple_counts, delta->tuples.begin(),
         delta->tuples.begin() + delta->tuple_counts, tuple_merge_buffer.begin(),
         tuple_indexed_less(delta->index_column_size, delta->arity));
@@ -403,6 +404,9 @@ void Relation::flush_delta(int grid_size, int block_size, float *detail_time) {
             // so we need to resize it
             tuple_merge_buffer.resize(tuple_merge_buffer_size);
         }
+    } else {
+        // if not using merge buffer, we need to clean buffer
+        // tuple_merge_buffer.clear();
     }
     timer.stop_timer();
     detail_time[2] = timer.get_spent_time();
@@ -425,7 +429,7 @@ void GHashRelContainer::update_index_map(int grid_size, int block_size, float lo
     index_map_size = std::ceil(tuple_counts / index_map_load_factor);
     // target->index_map_size = data_row_size;
     index_map.resize(index_map_size);
-    thrust::fill(thrust::device, index_map.begin(), index_map.end(),
+    thrust::fill(rmm::exec_policy(), index_map.begin(), index_map.end(),
                  MEntity{EMPTY_HASH_ENTRY, EMPTY_HASH_ENTRY});
 
     // print_tuple_rows(this, "before update index map");
@@ -455,7 +459,7 @@ void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src,
         src->tuple_counts);
     checkCuda(cudaStreamSynchronize(0));
     checkCuda(cudaGetLastError());
-    thrust::sort(thrust::device, dst->tuples.begin(),
+    thrust::sort(rmm::exec_policy(), dst->tuples.begin(),
                  dst->tuples.begin() + src->tuple_counts,
                  tuple_indexed_less(src->index_column_size, src->arity));
     dst->update_index_map(grid_size, block_size);
@@ -466,8 +470,11 @@ void free_relation_container(GHashRelContainer *target) {
     target->index_map_size = 0;
     target->data_raw_row_size = 0;
     target->index_map.clear();
+    target->index_map.shrink_to_fit();
     target->tuples.clear();
+    target->tuples.shrink_to_fit();
     target->data_raw.clear();
+    target->data_raw.shrink_to_fit();
 }
 
 void load_relation(Relation *target, std::string name, int arity,
@@ -501,7 +508,7 @@ void load_relation(Relation *target, std::string name, int arity,
         arity, data_row_size);
     checkCuda(cudaStreamSynchronize(0));
     checkCuda(cudaGetLastError());
-    thrust::sort(thrust::device, target->full->tuples.begin(),
+    thrust::sort(rmm::exec_policy(), target->full->tuples.begin(),
                  target->full->tuples.begin() + data_row_size,
                  tuple_indexed_less(index_column_size, arity));
     target->full->update_index_map(grid_size, block_size);

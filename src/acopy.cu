@@ -6,7 +6,7 @@
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/transform.h>
 #include <thrust/sort.h>
-
+#include <rmm/exec_policy.hpp>
 #include "../include/exception.cuh"
 #include "../include/print.cuh"
 #include "../include/relational_algebra.cuh"
@@ -48,7 +48,7 @@ void RelationalACopy::operator()() {
     // init tuples with (k*output_arity + dest->data_raw.data()) where k in range (0 ~ src->tuple_counts) using thrust
     thrust::counting_iterator<tuple_size_t> index_sequence_begin(0);
     thrust::counting_iterator<tuple_size_t> index_sequence_end(src->tuple_counts);
-    thrust::transform(thrust::device, index_sequence_begin, index_sequence_end,
+    thrust::transform(rmm::exec_policy(), index_sequence_begin, index_sequence_end,
                       dest->tuples.begin(),
                       acopy_init_unsort_func(dest->data_raw.data().get(), output_arity));
 }
