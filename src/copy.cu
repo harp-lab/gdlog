@@ -3,11 +3,25 @@
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
 #include <thrust/unique.h>
+// #include <thrust/transform.h>
+#include <thrust/for_each.h>
+#include <thrust/sort.h>
+#include <thrust/iterator/counting_iterator.h>
 
 #include "../include/exception.cuh"
 #include "../include/print.cuh"
 #include "../include/relational_algebra.cuh"
 #include "../include/timer.cuh"
+#include "../include/relation.cuh"
+
+// struct CopyTupleGenerator {
+    
+//     __device__ void operator()(tuple_type src, tuple_type dest) {
+//         for (int i = 0; i < arity; i++) {
+//             dest[i] = src[i];
+//         }
+//     }
+// };
 
 void RelationalCopy::operator()() {
     checkCuda(cudaStreamSynchronize(0));
@@ -22,74 +36,27 @@ void RelationalCopy::operator()() {
               << std::endl;
 
     if (src->tuple_counts == 0) {
-        dest_rel->newt->tuple_counts = 0;
         return;
     }
 
     int output_arity = dest_rel->arity;
-    column_type *copied_raw_data;
-    u64 copied_raw_data_size =
-        src->tuple_counts * output_arity * sizeof(column_type);
-    checkCuda(cudaMalloc((void **)&copied_raw_data, copied_raw_data_size));
-    checkCuda(cudaMemset(copied_raw_data, 0, copied_raw_data_size));
-    get_copy_result<<<grid_size, block_size>>>(src->tuples, copied_raw_data,
-                                               output_arity, src->tuple_counts,
-                                               tuple_generator);
-    checkCuda(cudaGetLastError());
-    checkCuda(cudaStreamSynchronize(0));
+
     float load_relation_container_time[5] = {0, 0, 0, 0, 0};
 
-    if (dest->tuples == nullptr || dest->tuple_counts == 0) {
-        free_relation_container(dest);
-        load_relation_container(
-            dest, dest->arity, copied_raw_data, src->tuple_counts,
-            src->index_column_size, dest->dependent_column_size, 0.8, grid_size,
-            block_size, load_relation_container_time, true, false, false);
-    } else {
-        GHashRelContainer *tmp = new GHashRelContainer(
-            dest->arity, dest->index_column_size, dest->dependent_column_size);
-        load_relation_container(
-            tmp, dest->arity, copied_raw_data, src->tuple_counts,
-            src->index_column_size, dest->dependent_column_size, 0.8, grid_size,
-            block_size, load_relation_container_time, true, false, false);
-        checkCuda(cudaStreamSynchronize(0));
-        // merge to newt
-        GHashRelContainer *old_newt = dest;
-        tuple_type *tp_buffer;
-        u64 tp_buffer_mem_size =
-            (old_newt->tuple_counts + src->tuple_counts) * sizeof(tuple_type);
-        checkCuda(cudaMalloc((void **)&tp_buffer, tp_buffer_mem_size));
-        checkCuda(cudaMemset(tp_buffer, 0, tp_buffer_mem_size));
-        tuple_type *tp_buffer_end = thrust::merge(
-            thrust::device, old_newt->tuples,
-            old_newt->tuples + old_newt->tuple_counts, tmp->tuples,
-            tmp->tuples + tmp->tuple_counts, tp_buffer,
-            tuple_indexed_less(dest->index_column_size, output_arity));
-        // checkCuda(cudaStreamSynchronize(0));
-        // checkCuda(cudaFree(tmp->tuples));
-        // checkCuda(cudaFree(old_newt->tuples));
-        tp_buffer_end = thrust::unique(thrust::device, tp_buffer, tp_buffer_end,
-                                       t_equal(output_arity));
-        checkCuda(cudaStreamSynchronize(0));
-        tuple_size_t new_newt_counts = tp_buffer_end - tp_buffer;
-        // std::cout << " >>>>>>>>>> " << new_newt_counts << std::endl;
-        column_type *new_newt_raw;
-        u64 new_newt_raw_mem_size =
-            new_newt_counts * output_arity * sizeof(column_type);
-        checkCuda(cudaMalloc((void **)&new_newt_raw, new_newt_raw_mem_size));
-        flatten_tuples_raw_data<<<grid_size, block_size>>>(
-            tp_buffer, new_newt_raw, new_newt_counts, output_arity);
-        checkCuda(cudaGetLastError());
-        checkCuda(cudaStreamSynchronize(0));
-        checkCuda(cudaFree(tp_buffer));
-        free_relation_container(old_newt);
-        free_relation_container(tmp);
-        load_relation_container(dest, output_arity, new_newt_raw,
-                                new_newt_counts, dest->index_column_size,
-                                dest->dependent_column_size, 0.8, grid_size,
-                                block_size, load_relation_container_time, true,
-                                true, false);
-        // delete tmp;
-    }
-    std::cout << "copy finish " << std::endl;
+    dest->tuple_counts = src->tuple_counts;
+    dest->data_raw.resize(src->data_raw.size());
+    dest->data_raw_row_size = src->tuple_counts;
+    get_copy_result<<<grid_size, block_size>>>(
+        src->tuples.data().get(), dest->data_raw.data().get(), output_arity,
+        src->tuple_counts, tuple_generator);
+    // TODO: rewrite this using thrust
+    // thrust::for_each(thrust::device, thrust::make_counting_iterator(0),
+    //     thrust::make_counting_iterator(src->tuple_counts),
+    //     [=] __device__ (int i) {
+    //         tuple_type dest_tuple = dest->data_raw + (i * output_arity);
+    //         (*tuple_generator)(, dest_tuple);
+    //     });
+                     
+    checkCuda(cudaStreamSynchronize(0));
+    checkCuda(cudaGetLastError());
 }

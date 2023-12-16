@@ -1,8 +1,10 @@
 #pragma once
 #include "relation.cuh"
 #include "tuple.cuh"
+#include <rmm/device_vector.hpp>
 #include <thrust/host_vector.h>
 #include <variant>
+#include <vector>
 
 // for fixing
 #ifndef MAX_REDUCE_SIZE
@@ -36,6 +38,9 @@ struct RelationalJoin {
     JoinDirection direction;
     int grid_size;
     int block_size;
+    counting_buf_t result_counts_buf_default;
+    counting_buf_t result_offset_buf_default;
+    // rmm::device_vector<column_type> raw_buf2;
 
     // flag for benchmark, this will disable sorting on result
     bool disable_load = false;
@@ -53,7 +58,11 @@ struct RelationalJoin {
           tuple_pred(tp_pred), direction(direction), grid_size(grid_size),
           block_size(block_size), detail_time(detail_time){};
 
+    void compute_join(counting_buf_t &result_counts_buf,
+                      counting_buf_t &result_offset_buf);
     void operator()();
+    void operator()(counting_buf_t &result_counts_buf,
+                    counting_buf_t &result_offset_buf);
 };
 
 /**
@@ -110,7 +119,7 @@ struct RelationalACopy {
 
 /**
  * @brief possible RA types
- * 
+ *
  */
 using ra_op = std::variant<RelationalJoin, RelationalCopy, RelationalACopy>;
 

@@ -1,13 +1,15 @@
 cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
 project(tc_gpu LANGUAGES CXX CUDA)
 
+find_package(rmm 24.02 REQUIRED)
+
 set(gpu_ra_src "${PROJECT_SOURCE_DIR}/src")
 set(gpu_ra_include "${PROJECT_SOURCE_DIR}/include")
 set(test_dir "${PROJECT_SOURCE_DIR}/test")
 
-set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} $ENV{CUDA_NVCC_FLAGS} -lineinfo --default-stream per-thread")
+# set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} $ENV{CUDA_NVCC_FLAGS} -lineinfo --default-stream per-thread --extended-lambda")
 
-file(GLOB source_file_gpu_ra 
+file(GLOB source_file_gpu_ra
     "${gpu_ra_include}/exception.cuh"
     "${gpu_ra_include}/dynamic_dispatch.h"
     "${gpu_ra_include}/print.cuh"
@@ -37,18 +39,13 @@ file(GLOB source_cspa
     "${test_dir}/cspa.cu"
 )
 
-file(GLOB source_file_datastructure
-    "${test_dir}/datastructure.cu"
-)
-
 file(GLOB source_file_sg
     "${test_dir}/sg.cu"
 )
 
-file(GLOB source_file_test
-    "${test_dir}/sort.cu"
-)
-
+# file(GLOB source_file_test
+# "${test_dir}/sort.cu"
+# )
 file(GLOB source_file_merge
     "${test_dir}/merge.cu"
 )
@@ -59,6 +56,11 @@ file(GLOB source_file_dedup
 
 add_library(gpu_ra "${source_file_gpu_ra}")
 target_compile_features(gpu_ra PUBLIC cxx_std_20)
+target_link_libraries(gpu_ra PUBLIC rmm::rmm)
+target_compile_options(gpu_ra PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:
+    -lineinfo
+    --default-stream per-thread
+    --extended-lambda>)
 set_target_properties(gpu_ra PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 add_executable(TC ${source_file_tc})
@@ -66,37 +68,32 @@ target_link_libraries(TC gpu_ra)
 target_compile_features(TC PUBLIC cxx_std_20)
 set_target_properties(TC PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-add_executable(PLEN ${source_path_lenght})
-target_link_libraries(PLEN gpu_ra)
-target_compile_features(PLEN PUBLIC cxx_std_20)
-set_target_properties(PLEN PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+# add_executable(PLEN ${source_path_lenght})
+# target_link_libraries(PLEN gpu_ra)
+# target_compile_features(PLEN PUBLIC cxx_std_20)
+# set_target_properties(PLEN PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-add_executable(CSPA ${source_cspa})
-target_link_libraries(CSPA gpu_ra)
-target_compile_features(CSPA PUBLIC cxx_std_20)
-set_target_properties(CSPA PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+# add_executable(CSPA ${source_cspa})
+# target_link_libraries(CSPA gpu_ra)
+# target_compile_features(CSPA PUBLIC cxx_std_20)
+# set_target_properties(CSPA PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-add_executable(DATASTRUCTURE ${source_file_datastructure})
-target_link_libraries(DATASTRUCTURE gpu_ra)
-target_compile_features(DATASTRUCTURE PUBLIC cxx_std_20)
-set_target_properties(DATASTRUCTURE PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+# add_executable(SG ${source_file_sg})
+# target_link_libraries(SG gpu_ra)
+# target_compile_features(SG PUBLIC cxx_std_20)
+# set_target_properties(SG PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-add_executable(SG ${source_file_sg})
-target_link_libraries(SG gpu_ra)
-target_compile_features(SG PUBLIC cxx_std_20)
-set_target_properties(SG PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+# add_executable(TEST ${source_file_test})
+# target_link_libraries(TEST gpu_ra)
+# target_compile_features(TEST PUBLIC cxx_std_20)
+# set_target_properties(TEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-add_executable(TEST ${source_file_test})
-target_link_libraries(TEST gpu_ra)
-target_compile_features(TEST PUBLIC cxx_std_20)
-set_target_properties(TEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+# add_executable(MERGE ${source_file_merge})
+# target_link_libraries(MERGE gpu_ra)
+# target_compile_features(MERGE PUBLIC cxx_std_20)
+# set_target_properties(MERGE PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
-add_executable(MERGE ${source_file_merge})
-target_link_libraries(MERGE gpu_ra)
-target_compile_features(MERGE PUBLIC cxx_std_20)
-set_target_properties(MERGE PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-
-add_executable(DEDUP ${source_file_dedup})
-target_link_libraries(DEDUP gpu_ra)
-target_compile_features(DEDUP PUBLIC cxx_std_20)
-set_target_properties(DEDUP PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+# add_executable(DEDUP ${source_file_dedup})
+# target_link_libraries(DEDUP gpu_ra)
+# target_compile_features(DEDUP PUBLIC cxx_std_20)
+# set_target_properties(DEDUP PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

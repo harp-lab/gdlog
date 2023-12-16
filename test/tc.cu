@@ -6,6 +6,7 @@
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
 #include <vector>
+#include <rmm/device_vector.hpp>
 
 #include "../include/exception.cuh"
 #include "../include/lie.cuh"
@@ -116,6 +117,8 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     // double kernel_spent_time = timer.get_spent_time();
     std::cout << "Build hash table time: " << timer.get_spent_time()
               << std::endl;
+    // print_tuple_rows(path_2__1_2->full, "full");
+    // print_tuple_rows(edge_2__2_1->full, "full");
 
     timer.start_timer();
     LIE tc_scc(grid_size, block_size);
@@ -146,69 +149,6 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
     std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
     std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
-}
-
-void analysis_bench2(const char *dataset_path, int block_size, int grid_size) {
-    KernelTimer timer;
-    int relation_columns = 2;
-    std::chrono::high_resolution_clock::time_point time_point_begin;
-    std::chrono::high_resolution_clock::time_point time_point_end;
-    time_point_begin = std::chrono::high_resolution_clock::now();
-    double spent_time;
-
-    // load the raw graph
-    tuple_size_t graph_edge_counts = get_row_size(dataset_path);
-    std::cout << "Input graph rows: " << graph_edge_counts << std::endl;
-    // u64 graph_edge_counts = 2100;
-    column_type *raw_graph_data =
-        get_relation_from_file(dataset_path, graph_edge_counts, 2, '\t', U32);
-    column_type *raw_reverse_graph_data =
-        (column_type *)malloc(graph_edge_counts * 2 * sizeof(column_type));
-
-    std::cout << "reversing graph ... " << std::endl;
-    for (tuple_size_t i = 0; i < graph_edge_counts; i++) {
-        raw_reverse_graph_data[i * 2 + 1] = raw_graph_data[i * 2];
-        raw_reverse_graph_data[i * 2] = raw_graph_data[i * 2 + 1];
-    }
-    std::cout << "finish reverse graph." << std::endl;
-
-    timer.start_timer();
-    Relation *path_2__1_2 = new Relation();
-    // cudaMallocHost((void **)&path_2__1_2, sizeof(Relation));
-    Relation *path_2__2_1 = new Relation();
-    // cudaMallocHost((void **)&path_2__2_1, sizeof(Relation));
-    std::cout << "edge size " << graph_edge_counts << std::endl;
-    load_relation(path_2__1_2, "path_2__1_2", 2, raw_graph_data,
-                  graph_edge_counts, 1, 0, grid_size, block_size);
-    load_relation(path_2__2_1, "path_2__2_1", 2, nullptr, 0, 1, 0, grid_size,
-                  block_size);
-    timer.stop_timer();
-    // double kernel_spent_time = timer.get_spent_time();
-    std::cout << "Build hash table time: " << timer.get_spent_time()
-              << std::endl;
-
-    timer.start_timer();
-    LIE tc_scc(grid_size, block_size);
-    tc_scc.add_relations(path_2__2_1, false);
-    tc_scc.add_relations(path_2__1_2, false);
-    float join_time[3];
-    tuple_generator_hook reorder_path_host;
-    cudaMemcpyFromSymbol(&reorder_path_host, reorder_path1_device,
-                         sizeof(tuple_generator_hook));
-    tuple_copy_hook cp_1_host;
-    cudaMemcpyFromSymbol(&cp_1_host, cp_1_device, sizeof(tuple_copy_hook));
-    tc_scc.add_ra(RelationalACopy(path_2__1_2, path_2__2_1, cp_1_host, nullptr,
-                                  grid_size, block_size));
-    tc_scc.add_ra(RelationalJoin(path_2__1_2, FULL, path_2__2_1, DELTA,
-                                 path_2__1_2, reorder_path_host, nullptr, LEFT,
-                                 grid_size, block_size, join_time));
-
-    tc_scc.fixpoint_loop();
-
-    timer.stop_timer();
-    std::cout << "Path counts " << path_2__1_2->full->tuple_counts << std::endl;
-    // print_tuple_rows(path_2__2_1->full, "full");
-    std::cout << "TC time: " << timer.get_spent_time() << std::endl;
 }
 
 int main(int argc, char *argv[]) {
