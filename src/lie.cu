@@ -131,10 +131,8 @@ void LIE::fixpoint_loop() {
         bool fixpoint_flag = true;
         for (Relation *rel : update_relations) {
             std::cout << rel->name << std::endl;
-
             // print_tuple_rows(rel->full, "Path full before populate
             // >>>>>>>>>>>>>>>> ", false);
-
             // populate newt
             timer.start_timer();
             rel->newt->tuples.resize(rel->newt->tuple_counts);
@@ -143,9 +141,7 @@ void LIE::fixpoint_loop() {
                 rel->newt->data_raw.data().get(), rel->arity,
                 rel->newt->tuple_counts);
             checkCuda(cudaStreamSynchronize(0));
-
             // print_tuple_raw_data(rel->newt, "Path newt before sort");
-
             timer.stop_timer();
             init_tp_array_time += timer.get_spent_time();
             timer.start_timer();
@@ -163,6 +159,10 @@ void LIE::fixpoint_loop() {
             rel->newt->tuple_counts = new_end - rel->newt->tuples.begin();
             rel->newt->tuples.resize(rel->newt->tuple_counts);
             unique_time += timer.get_spent_time();
+
+            // if (iteration_counter == 0 && "value_flow_2__1_2" == rel->name) {
+            // print_tuple_rows(rel->newt, "Path newt after sort", false);
+            // }
 
             // if (rel->newt->tuple_counts != 0) {
             //     fixpoint_flag = false;
@@ -232,7 +232,9 @@ void LIE::fixpoint_loop() {
             rebuild_delta_time += timer.get_spent_time();
 
             // TODO: do we need free it actually? we can just set counts to 0
-            free_relation_container(rel->newt);
+            // free_relation_container(rel->newt);
+            rel->newt->tuples.shrink_to_fit();
+            rel->newt->data_raw.shrink_to_fit();
             rel->newt->tuple_counts = 0;
             rel->newt->data_raw_row_size = 0;
 
@@ -389,11 +391,11 @@ void LIE::fixpoint_loop() {
                   << std::endl;
     }
     // 84942979072
-    // 63177890936
-    // 4717331424
-    // 33436052608  delta
+    // 35166946600
+    // 12143275984
+    // 14552303136  delta
     // 22744183704  newt
-    // 2280323200  full_buf
+    // 8471366784  full_buf
 
     print_memory_usage();
 
@@ -408,16 +410,26 @@ void LIE::fixpoint_loop() {
     if (reload_full_flag) {
         std::cout << "Start merge full" << std::endl;
         for (Relation *rel : update_relations) {
+            std::cout << "Start merge full for " << rel->name << std::endl;
             KernelTimer timer;
             // if (rel->current_full_size <= rel->full->tuple_counts) {
             //     continue;
             // }
-            rel->full->data_raw.resize(rel->full->tuple_counts * rel->arity);
-            // cudaFree(tuple_merge_buffer);
+            std::cout << rel->name << " full size: " << rel->full->tuple_counts
+                      << "   " << rel->arity << std::endl;
             timer.start_timer();
+            rel->full->data_raw.resize(rel->full->tuple_counts * rel->arity);
+            rel->tuple_merge_buffer.resize(0);
+            rel->tuple_merge_buffer.shrink_to_fit();
+            // cudaFree(tuple_merge_buffer);
+            checkCuda(cudaStreamSynchronize(0));
             flatten_tuples_raw_data_thrust(rel->full->tuples.data().get(),
                                            rel->full->data_raw.data().get(),
                                            rel->full->tuple_counts, rel->arity);
+            std::cout << "Finished flatten full" << std::endl;
+            init_tuples_unsorted_thrust(rel->full->tuples.data().get(),
+                                        rel->full->data_raw.data().get(),
+                                        rel->arity, rel->full->tuple_counts);
             timer.stop_timer();
             flatten_full_time += timer.get_spent_time();
             checkCuda(cudaStreamSynchronize(0));

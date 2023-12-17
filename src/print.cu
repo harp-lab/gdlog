@@ -28,9 +28,9 @@ void print_tuple_rows(GHashRelContainer *target, const char *rel_name,
     std::cout << "Relation tuples >>> " << rel_name << std::endl;
     std::cout << "Total tuples counts:  " << target->tuple_counts << std::endl;
     u32 pt_size = target->tuple_counts;
-    if (target->tuple_counts > 3000) {
-        pt_size = 3000;
-    }
+    // if (target->tuple_counts > 3000) {
+    //     pt_size = 100;
+    // }
     for (tuple_size_t i = 0; i < pt_size; i++) {
         tuple_type cur_tuple = natural_ordered[i];
         if (cur_tuple == nullptr) {
@@ -52,9 +52,9 @@ void print_tuple_rows(GHashRelContainer *target, const char *rel_name,
         std::cout << std::endl;
         cudaFreeHost(cur_tuple_host);
     }
-    if (target->tuple_counts > 3000) {
-        std::cout << "........." << std::endl;
-    }
+    // if (target->tuple_counts > 3000) {
+    //     std::cout << "........." << std::endl;
+    // }
     std::cout << "end <<<" << std::endl;
 }
 

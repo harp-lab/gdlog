@@ -6,6 +6,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
+#include <thrust/for_each.h>
 #include <vector>
 
 #include "../include/exception.cuh"
@@ -251,7 +252,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
                   block_size, true);
 
     LIE analysis_scc(grid_size, block_size);
-
+    analysis_scc.reload_full_flag = false;
     analysis_scc.add_relations(assign_2__2_1, true);
     analysis_scc.add_relations(dereference_2__1_2, true);
     analysis_scc.add_relations(dereference_2__2_1, true);
@@ -376,6 +377,8 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
     std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
     std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
+    // print_tuple_rows(value_flow_2__1_2->full, "value_flow_2__1_2");
+
 }
 
 int main(int argc, char *argv[]) {

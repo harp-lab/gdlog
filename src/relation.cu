@@ -452,8 +452,12 @@ void copy_relation_container(GHashRelContainer *dst, GHashRelContainer *src,
     dst->data_raw_row_size = src->data_raw_row_size;
     dst->arity = src->arity;
     dst->dependent_column_size = src->dependent_column_size;
-    dst->data_raw = src->data_raw;
+    // dst->data_raw = src->data_raw;
+    dst->data_raw.resize(src->tuple_counts * src->arity);
     dst->tuples.resize(src->tuple_counts);
+    flatten_tuples_raw_data_thrust(src->tuples.data().get(),
+                                   dst->data_raw.data().get(),
+                                   src->tuple_counts, src->arity);
     init_tuples_unsorted<<<grid_size, block_size>>>(
         dst->tuples.data().get(), dst->data_raw.data().get(), src->arity,
         src->tuple_counts);

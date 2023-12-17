@@ -1,11 +1,11 @@
 #include <iostream>
+#include <rmm/exec_policy.hpp>
 #include <thrust/copy.h>
 #include <thrust/execution_policy.h>
 #include <thrust/reduce.h>
 #include <thrust/scan.h>
 #include <thrust/sort.h>
 #include <thrust/unique.h>
-#include <rmm/exec_policy.hpp>
 
 #include "../include/exception.cuh"
 #include "../include/print.cuh"
@@ -36,6 +36,11 @@ void RelationalJoin::compute_join(counting_buf_t &result_counts_buf,
     } else {
         // temp relation can be outer relation
         outer = outer_rel->newt;
+        // if join with newt, we need update tuple in newt now
+        outer->tuples.resize(outer->tuple_counts);
+        init_tuples_unsorted_thrust(outer->tuples.data().get(),
+                                    outer->data_raw.data().get(),
+                                    outer->arity, outer->tuple_counts);
     }
     int output_arity = output_rel->arity;
     // GHashRelContainer* output = output_rel->newt;
@@ -52,13 +57,13 @@ void RelationalJoin::compute_join(counting_buf_t &result_counts_buf,
         return;
     }
 
+    tuple_size_t existing_newt_size = output_rel->newt->tuple_counts;
+
     KernelTimer timer;
     // checkCuda(cudaStreamSynchronize(0));
     timer.start_timer();
     result_counts_buf.resize(outer->tuple_counts);
 
-    // print_tuple_rows(outer, "inber");
-    // checkCuda(cudaStreamSynchronize(0));
     checkCuda(cudaStreamSynchronize(0));
     get_join_result_size<<<grid_size, block_size>>>(
         inner->index_map.data().get(), inner->index_map_size,
@@ -121,15 +126,18 @@ void RelationalJoin::compute_join(counting_buf_t &result_counts_buf,
     // print result_counts_buf
 
     timer.start_timer();
-    output_rel->newt->tuple_counts = total_result_rows;
-    output_rel->newt->data_raw.resize(total_result_rows * output_arity);
-    output_rel->newt->data_raw_row_size = total_result_rows;
+    output_rel->newt->tuple_counts = existing_newt_size + total_result_rows;
+    output_rel->newt->data_raw.resize(output_rel->newt->tuple_counts *
+                                      output_arity);
+    output_rel->newt->data_raw_row_size = output_rel->newt->tuple_counts;
     get_join_result<<<grid_size, block_size>>>(
         inner->index_map.data().get(), inner->index_map_size,
         inner->tuple_counts, inner->tuples.data().get(),
         outer->tuples.data().get(), outer->tuple_counts,
         outer->index_column_size, outer->index_column_size, tuple_generator,
-        tuple_pred, output_arity, output_rel->newt->data_raw.data().get(),
+        tuple_pred, output_arity,
+        output_rel->newt->data_raw.data().get() +
+            existing_newt_size * output_arity,
         result_counts_buf.data().get(), result_offset_buf.data().get(),
         direction);
     checkCuda(cudaStreamSynchronize(0));
