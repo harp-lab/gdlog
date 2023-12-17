@@ -26,7 +26,7 @@ struct LIE {
     // GPU block size
     int block_size;
 
-    bool reload_full_flag = true;
+    bool reload_full_flag = false;
     int max_iteration = INT_MAX;
 
     LIE(int grid_size, int block_size)

@@ -12,6 +12,11 @@
 #include "../include/print.cuh"
 #include "../include/timer.cuh"
 
+#include <rmm/mr/device/cuda_memory_resource.hpp>
+#include <rmm/mr/device/per_device_resource.hpp>
+#include <rmm/mr/device/pool_memory_resource.hpp>
+#include <rmm/mr/device/managed_memory_resource.hpp>
+
 //////////////////////////////////////////////////////
 
 long int get_row_size(const char *data_path) {
@@ -204,6 +209,10 @@ int main(int argc, char *argv[]) {
     grid_size = 32 * number_of_sm;
     std::locale loc("");
 
+    // rmm::mr::cuda_memory_resource cuda_mr{};
+    // rmm::mr::pool_memory_resource<rmm::mr::cuda_memory_resource> mr{&cuda_mr};
+    // rmm::mr::managed_memory_resource mr;
+    // rmm::mr::set_current_device_resource(&mr);
     analysis_bench(argv[1], block_size, grid_size);
     return 0;
 }

@@ -3,13 +3,10 @@
 #include "../include/lie.cuh"
 #include "../include/print.cuh"
 #include "../include/timer.cuh"
-// #include <future>
 #include <iostream>
 #include <map>
-#include <rmm/device_buffer.hpp>
 #include <rmm/device_vector.hpp>
 #include <rmm/exec_policy.hpp>
-#include <thread>
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
@@ -60,7 +57,6 @@ void LIE::fixpoint_loop() {
     for (Relation *rel : update_relations) {
         copy_relation_container(rel->delta, rel->full, grid_size, block_size);
     }
-    std::map<Relation *, std::thread> updated_res_map;
 
     rmm::device_vector<tuple_type> deduplicated_newt_buf;
     counting_buf_t join_counts_buf;
@@ -72,16 +68,6 @@ void LIE::fixpoint_loop() {
                 dynamic_dispatch{
                     [&](RelationalJoin &op) {
                         // timer.start_timer();
-                        if (updated_res_map.find(op.inner_rel) !=
-                            updated_res_map.end()) {
-                            // std::cout << "wait for "
-                            //           << op.inner_rel->name
-                            //           << std::endl;
-                            if (updated_res_map[op.inner_rel].joinable()) {
-                                updated_res_map[op.inner_rel].join();
-                            }
-                            updated_res_map.erase(op.inner_rel);
-                        }
                         op(join_counts_buf, join_offset_buf);
                         join_counts_buf.clear();
                         join_offset_buf.clear();
@@ -89,23 +75,9 @@ void LIE::fixpoint_loop() {
                         // join_counts_buf.shrink_to_fit();
                     },
                     [&](RelationalACopy &op) {
-                        if (updated_res_map.find(op.src_rel) !=
-                            updated_res_map.end()) {
-                            if (updated_res_map[op.src_rel].joinable()) {
-                                updated_res_map[op.src_rel].join();
-                            }
-                            updated_res_map.erase(op.src_rel);
-                        }
                         op();
                     },
                     [&](RelationalCopy &op) {
-                        if (updated_res_map.find(op.src_rel) !=
-                            updated_res_map.end()) {
-                            if (updated_res_map[op.src_rel].joinable()) {
-                                updated_res_map[op.src_rel].join();
-                            }
-                            updated_res_map.erase(op.src_rel);
-                        }
                         if (op.src_ver == FULL) {
                             if (!op.copied) {
                                 op();
@@ -210,12 +182,6 @@ void LIE::fixpoint_loop() {
             }
             timer.stop_timer();
             set_diff_time += timer.get_spent_time();
-            if (updated_res_map.find(rel) != updated_res_map.end()) {
-                if (updated_res_map[rel].joinable()) {
-                    updated_res_map[rel].join();
-                }
-                updated_res_map.erase(rel);
-            }
             timer.start_timer();
             rel->delta->data_raw.resize(deduplicate_size * rel->delta->arity);
             flatten_tuples_raw_data_thrust(rel->delta->tuples.data().get(),
@@ -390,12 +356,6 @@ void LIE::fixpoint_loop() {
                   << " full buf size: " << actual_size_full_buf
                   << std::endl;
     }
-    // 84942979072
-    // 35166946600
-    // 12143275984
-    // 14552303136  delta
-    // 22744183704  newt
-    // 8471366784  full_buf
 
     print_memory_usage();
 
