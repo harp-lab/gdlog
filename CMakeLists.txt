@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
 project(tc_gpu LANGUAGES CXX CUDA)
 
-find_package(rmm 24.02 REQUIRED)
+find_package(rmm REQUIRED)
 
 set(gpu_ra_src "${PROJECT_SOURCE_DIR}/src")
 set(gpu_ra_include "${PROJECT_SOURCE_DIR}/include")
@@ -63,6 +63,19 @@ target_compile_options(gpu_ra PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:
     --default-stream per-thread
     --extended-lambda>)
 set_target_properties(gpu_ra PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+
+
+
+
+# using test
+include(CTest)
+
+if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
+    add_subdirectory(unittest)
+endif ()
+enable_testing()
+
+
 
 add_executable(TC ${source_file_tc})
 target_link_libraries(TC gpu_ra)
