@@ -4,6 +4,10 @@
 #include <string>
 #include <thrust/tuple.h>
 #include <vector>
+#include <rmm/exec_policy.hpp>
+#include <thrust/sort.h>
+#include <thrust/sequence.h>
+#include <thrust/gather.h>
 
 #ifndef RADIX_SORT_THRESHOLD
 #define RADIX_SORT_THRESHOLD 0

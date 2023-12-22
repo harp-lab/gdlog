@@ -2,7 +2,7 @@
 #include "../include/print.cuh"
 #include <iostream>
 #include <rmm/device_vector.hpp>
-#include <thrust/host_vector.h>
+#include <thrust/copy.h>
 #include <thrust/sort.h>
 
 void print_hashes(GHashRelContainer *target, const char *rel_name) {
@@ -102,27 +102,3 @@ tuple_size_t get_total_memory() {
     cudaMemGetInfo(&free, &total);
     return total;
 }
-
-// void print_tuple_list(tuple_type* tuples, tuple_size_t rows, tuple_size_t
-// arity) {
-//     tuple_type* tuples_host;
-//     cudaMallocHost((void**) &tuples_host, rows * sizeof(tuple_type));
-//     cudaMemcpy(tuples_host, tuples, rows * sizeof(tuple_type),
-//                cudaMemcpyDeviceToHost);
-//     if (rows > 100) {
-//         rows = 100;
-//     }
-//     for (tuple_size_t i = 0; i < rows; i++) {
-//         tuple_type cur_tuple = tuples_host[i];
-
-//         tuple_type cur_tuple_host;
-//         cudaMallocHost((void**) &cur_tuple_host, arity *
-//         sizeof(column_type)); cudaMemcpy(cur_tuple_host, cur_tuple, arity *
-//         sizeof(column_type),
-//                    cudaMemcpyDeviceToHost);
-//         for (tuple_size_t j = 0; j < arity; j++) {
-//             std::cout << cur_tuple_host[j] << " ";
-//         }
-//         std::cout << std::endl;
-//     }
-// }

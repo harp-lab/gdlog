@@ -4,6 +4,7 @@
 
 #pragma once
 #include <cstdint>
+#include <iostream>
 #include <rmm/device_vector.hpp>
 #include <rmm/exec_policy.hpp>
 #include <thrust/copy.h>
@@ -19,26 +20,51 @@
 #include <thrust/transform.h>
 #include <thrust/unique.h>
 
-#include <timer.cuh>
+#include <thrust/host_vector.h>
+
+#include "../include/hash.h"
+#include "../include/timer.cuh"
 
 using column_data_type_default = int;
+using index_type_default = uint32_t;
 using column_container_type_default =
     rmm::device_vector<column_data_type_default>;
-using column_index_type_default =
-    rmm::device_vector<column_container_type_default>;
+using column_index_type_default = rmm::device_vector<index_type_default>;
 
-template <typename container_type, typename column_index_type>
+template <typename col_type>
+void sort_raw_data(rmm::device_vector<col_type> &flatten_data,
+                   rmm::device_vector<col_type> &sorted_raw_row_index,
+                   int row_size, int column_size) {
+    sorted_raw_row_index.resize(row_size);
+    sorted_raw_row_index.shrink_to_fit();
+    thrust::sequence(sorted_raw_row_index.begin(), sorted_raw_row_index.end());
+    rmm::device_vector<col_type> tmp_col(row_size);
+    tmp_col.shrink_to_fit();
+
+    for (int cur_column_idx = column_size - 1; cur_column_idx >= 0;
+         cur_column_idx--) {
+        thrust::gather(rmm::exec_policy(), sorted_raw_row_index.begin(),
+                       sorted_raw_row_index.end(),
+                       flatten_data.begin() + row_size * cur_column_idx,
+                       tmp_col.begin());
+        thrust::stable_sort_by_key(rmm::exec_policy(), tmp_col.begin(),
+                                   tmp_col.end(), sorted_raw_row_index.begin());
+    }
+}
+
+template <typename col_type, typename container_type,
+          typename column_index_type, typename col_size_type = col_type>
 struct IndexColumn {
     // uint64_t size;
     // all value in current column, this vector is unique
     container_type data;
     // need a better hash map?
-    rmm::device_vector<uint32_t> hashes;
-    rmm::device_vector<uint32_t> index;
+    rmm::device_vector<column_index_type> hashes;
+    rmm::device_vector<col_size_type> index;
     // tuple permutation in hash order
-    rmm::device_vector<uint32_t> offsets;
+    rmm::device_vector<col_size_type> offsets;
     // tuple permutation in lexical order
-    rmm::device_vector<uint32_t> lex_offset;
+    rmm::device_vector<col_size_type> lex_offset;
 };
 
 template <typename container_type> struct DataColumn {
@@ -47,9 +73,10 @@ template <typename container_type> struct DataColumn {
 
 template <typename col_type = column_data_type_default,
           typename container_type = rmm::device_vector<col_type>,
-          typename column_index_type = rmm::device_vector<col_type>>
+          typename column_index_type = index_type_default>
 struct HISA {
-    using trie_column_type = IndexColumn<container_type, column_index_type>;
+    using trie_column_type =
+        IndexColumn<col_type, container_type, column_index_type>;
     trie_column_type *index_container;
     using data_column_type = DataColumn<container_type>;
     data_column_type *data_containers;
@@ -71,7 +98,8 @@ struct HISA {
     HISA(int arity, int index_column_size, bool compress_flag = true)
         : arity(arity), index_column_size(index_column_size),
           compress_flag(compress_flag) {
-        index_container = new IndexColumn<container_type, column_index_type>;
+        index_container =
+            new IndexColumn<col_type, container_type, column_index_type>;
         data_containers = new DataColumn<container_type>[arity];
         data_column_size = arity;
     }
@@ -92,30 +120,29 @@ struct HISA {
     void build(rmm::device_vector<col_type> &flatten_data, uint64_t row_size) {
         KernelTimer timer;
         // sort flatten_data first
-        timer.start();
+        timer.start_timer();
         rmm::device_vector<col_type> sorted_raw_row_index(row_size);
         sort_raw_data(flatten_data, sorted_raw_row_index, row_size, arity);
-        timer.stop();
+        timer.stop_timer();
         detail_time[0] += timer.get_spent_time();
 
-        timer.start();
+        timer.start_timer();
         _load(flatten_data, row_size, sorted_raw_row_index);
-        timer.stop();
+        timer.stop_timer();
         detail_time[1] += timer.get_spent_time();
 
-        timer.start();
+        timer.start_timer();
         _dedup();
-        timer.stop();
+        timer.stop_timer();
         detail_time[2] += timer.get_spent_time();
+        std::cout << "dedup data" << std::endl;
 
-        timer.start();
         if (indexed_flag) {
-            timer.start();
+            timer.start_timer();
             build_index();
-            timer.stop();
+            timer.stop_timer();
+            detail_time[3] += timer.get_spent_time();
         }
-        timer.start();
-        detail_time[3] += timer.get_spent_time();
     }
 
     // merge and deduplicates, leave set_differece tuples in target
@@ -127,17 +154,16 @@ struct HISA {
         _merge_permutation(target, merged_index);
         // _reorder_merge(target, merged_index);
         _unordered_merge(target, merged_index);
-
-        rmm::device_vector<bool> unique_dedup(row_size);
+        rmm::device_vector<bool> unique_dedup(total_row_size);
         thrust::fill(rmm::exec_policy(), unique_dedup.begin(),
                      unique_dedup.end(), false);
         _find_dup(unique_dedup);
         // drop all dups in permutation
-        auto new_end = thrust::remove_if(
+        auto new_end_unique_dedup = thrust::remove_if(
             rmm::exec_policy(), merged_index.begin(), merged_index.end(),
             unique_dedup.begin(),
             [] __device__(bool is_unique) { return !is_unique; });
-        auto new_perm_size = new_end - merged_index.begin();
+        auto new_perm_size = new_end_unique_dedup - merged_index.begin();
         merged_index.resize(new_perm_size);
         _remove_tuples_in_vec(unique_dedup);
         // partition to get all perm value originally in target
@@ -146,12 +172,13 @@ struct HISA {
 
         rmm::device_vector<col_type> row_index_perm(total_row_size);
         thrust::sequence(row_index_perm.begin(), row_index_perm.end());
-        auto new_end = thrust::partition(
+        auto new_end_part = thrust::partition(
             rmm::exec_policy(), row_index_perm.begin(), row_index_perm.end(),
-            [total_row_size, idx_ptr = merged_index.begin()] __device__(int p) {
-                return idx_ptr[p] >= total_row_size;
+            [total_size = total_row_size,
+             idx_ptr = merged_index.begin()] __device__(int p) {
+                return idx_ptr[p] >= total_size;
             });
-        auto new_size_delta = new_end - row_index_perm.begin();
+        auto new_size_delta = new_end_part - row_index_perm.begin();
         row_index_perm.resize(new_size_delta);
         row_index_perm.shrink_to_fit();
 
@@ -196,7 +223,7 @@ struct HISA {
             data_column_type *target_column =
                 target.data_containers + cur_column_idx;
             // copy data to tmp
-            thurst::gather(rmm::exec_policy(), tmp_this_index.begin(),
+            thrust::gather(rmm::exec_policy(), tmp_this_index.begin(),
                            tmp_this_index.end(), cur_column->data.begin(),
                            tmp_this_col.begin());
             // do we have a better way to gather this from permutation
@@ -299,6 +326,7 @@ struct HISA {
     void _find_dup(rmm::device_vector<bool> &unique_dedup) {
         rmm::device_vector<col_type> tmp_col(total_row_size);
         tmp_col.shrink_to_fit();
+        unique_dedup[0] = true;
         for (int cur_column_idx = arity - 1; cur_column_idx >= 0;
              cur_column_idx--) {
             data_column_type *cur_column = data_containers + cur_column_idx;
@@ -308,21 +336,33 @@ struct HISA {
                            index_container->lex_offset.begin(),
                            index_container->lex_offset.end(),
                            cur_column->data.begin(), tmp_col.begin());
-            thrust::for_each(
-                rmm::exec_policy(), thrust::counting_iterator<col_type>(0),
-                thrust::counting_iterator<col_type>(row_size),
-                [raw_data_ptr = tmp_col.begin(),
-                 unique_dedup_ptr =
-                     unique_dedup.begin()] __device__(col_type row_idx) {
-                    if (row_idx == 0) {
-                        unique_dedup_ptr[row_idx] = true;
-                    } else {
-                        unique_dedup_ptr[row_idx] =
-                            unique_dedup_ptr[row_idx - 1] &&
-                            (raw_data_ptr[row_idx] !=
-                             raw_data_ptr[row_idx - 1]);
-                    }
-                });
+            rmm::device_vector<bool> dedup_tmp(total_row_size);
+            dedup_tmp[0] = true;
+            // thrust::for_each(
+            //     rmm::exec_policy(), thrust::counting_iterator<col_type>(0),
+            //     thrust::counting_iterator<col_type>(cur_column->data.size()),
+            //     [raw_data_ptr = tmp_col.begin(),
+            //      unique_dedup_ptr =
+            //          unique_dedup.begin()] __device__(col_type row_idx) {
+            //         if (row_idx == 0) {
+            //             unique_dedup_ptr[row_idx] = true;
+            //         } else {
+            //             unique_dedup_ptr[row_idx] =
+            //                 unique_dedup_ptr[row_idx - 1] &&
+            //                 (raw_data_ptr[row_idx] !=
+            //                  raw_data_ptr[row_idx - 1]);
+            //         }
+            //     });
+            thrust::transform(rmm::exec_policy(), tmp_col.begin(),
+                              tmp_col.end() - 1, tmp_col.begin() + 1,
+                              dedup_tmp.begin() + 1,
+                              [] __device__(col_type data_l, col_type data_r) {
+                                  return data_l != data_r;
+                              });
+            thrust::transform(rmm::exec_policy(), unique_dedup.begin(),
+                              unique_dedup.end(), dedup_tmp.begin(),
+                              unique_dedup.begin(),
+                              [] __device__(bool a, bool b) { return a || b; });
         }
         // if its not sorted order by natural
         tmp_col.resize(0);
@@ -330,7 +370,7 @@ struct HISA {
         rmm::device_vector<bool> dedup_tmp(total_row_size);
         thrust::gather(rmm::exec_policy(), index_container->lex_offset.begin(),
                        index_container->lex_offset.end(), unique_dedup.begin(),
-                       tmp_col.begin());
+                       dedup_tmp.begin());
         unique_dedup.swap(dedup_tmp);
     }
 
@@ -348,8 +388,10 @@ struct HISA {
                 cur_column->data.end(), unique_dedup.begin(),
                 [] __device__(bool is_unique) { return !is_unique; });
             cur_column->data.resize(new_end - cur_column->data.begin());
-            cur_column->shrink_to_fit();
+            cur_column->data.shrink_to_fit();
         }
+        auto new_total_row_size = total_row_size - duplicates;
+        total_row_size = new_total_row_size;
     }
 
     // dedup all data column
@@ -364,6 +406,12 @@ struct HISA {
         thrust::fill(rmm::exec_policy(), unique_dedup.begin(),
                      unique_dedup.end(), false);
         _find_dup(unique_dedup);
+        std::cout << "find dup" << std::endl;
+        thrust::host_vector<bool> unique_dedup_host(unique_dedup);
+        for (auto i : unique_dedup_host) {
+            std::cout << i << " ";
+        }
+        std::cout << std::endl;
         _remove_tuples_in_vec(unique_dedup);
     }
 
@@ -388,7 +436,7 @@ struct HISA {
         total_row_size = row_size;
         // assume sorted here, refresh lexical order in index
         index_container->lex_offset.resize(total_row_size);
-        index_container.shrink_to_fit();
+        index_container->lex_offset.shrink_to_fit();
         thrust::sequence(index_container->lex_offset.begin(),
                          index_container->lex_offset.end());
         sort_data_column_flag = true;
@@ -400,9 +448,9 @@ struct HISA {
         index_container->index.resize(row_size);
         int cur_column_idx = arity - 1;
         data_column_type *cur_column = data_containers + cur_column_idx;
-        thrust::device_vector<col_type> tmp_col(total_row_size);
-        thrust::gather(rmm::exec_policy(), index_container.lex_offset.begin(),
-                       index_container.lex_offset.end(),
+        rmm::device_vector<col_type> tmp_col(total_row_size);
+        thrust::gather(rmm::exec_policy(), index_container->lex_offset.begin(),
+                       index_container->lex_offset.end(),
                        cur_column->data.begin(), tmp_col.begin());
         tmp_col.shrink_to_fit();
         thrust::transform(rmm::exec_policy(), tmp_col.begin(), tmp_col.end(),
@@ -412,19 +460,19 @@ struct HISA {
                           });
         cur_column_idx--;
         for (; cur_column_idx >= 0; cur_column_idx--) {
-
-            cur_column = data_containers[cur_column_idx];
+            cur_column = data_containers + cur_column_idx;
             thrust::gather(rmm::exec_policy(),
-                           index_container.lex_offset.begin(),
-                           index_container.lex_offset.end(),
+                           index_container->lex_offset.begin(),
+                           index_container->lex_offset.end(),
                            cur_column->data.begin(), tmp_col.begin());
             // compute hash
-            thrust::transform(rmm::exec_policy(), tmp_col.begin(),
-                              tmp_col.end(), index_container->hashes.begin(),
-                              [] __device__(col_type data, uint32_t old_v) {
-                                  return hash_combine(
-                                      murmur_hash3((uint32_t)data), old_v);
-                              });
+            thrust::transform(
+                rmm::exec_policy(), index_container->hashes.begin(),
+                index_container->hashes.end(), tmp_col.begin(),
+                index_container->hashes.begin(),
+                [] __device__(uint32_t old_v, col_type data) {
+                    return hash_combine(murmur_hash3((uint32_t)data), old_v);
+                });
         }
         index_container->offsets.resize(row_size);
         thrust::sequence(index_container->offsets.begin(),
@@ -447,38 +495,3 @@ struct HISA {
         index_container->index.shrink_to_fit();
     }
 };
-
-template <typename col_type>
-void sort_raw_data(rmm::device_vector<col_type> &flatten_data,
-                   rmm::device_vector<col_type> &sorted_raw_row_index,
-                   int row_size, int column_size) {
-    sorted_raw_row_index.resize(row_size);
-    sorted_raw_row_index.shrink_to_fit();
-    thrust::sequence(sorted_raw_row_index.begin(), sorted_raw_row_index.end());
-    rmm::device_vector<col_type> tmp_col(row_size);
-    tmp_col.shrink_to_fit();
-
-    for (int cur_column_idx = column_size; cur_column_idx >= 0;
-         cur_column_idx--) {
-        thrust::gather(rmm::exec_policy(), sorted_raw_row_index.begin(),
-                       sorted_raw_row_index.end(),
-                       flatten_data.begin() + row_size * cur_column_idx,
-                       tmp_col.begin());
-        thrust::stable_sort_by_key(rmm::exec_policy(), tmp_col.begin(),
-                                   tmp_col.end(), sorted_raw_row_index.begin());
-    }
-}
-
-__device__ __host__ uint32_t murmur_hash3(uint32_t key) {
-    key ^= key >> 16;
-    key *= 0x85ebca6b;
-    key ^= key >> 13;
-    key *= 0xc2b2ae35;
-    key ^= key >> 16;
-
-    return key;
-}
-
-__device__ __host__ uint32_t hash_combine(uint32_t v1, uint32_t v2) {
-    return v1 ^ (v2 + 0x9e3779b9 + (v1 << 6) + (v1 >> 2));
-}

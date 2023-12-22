@@ -19,6 +19,7 @@ file(GLOB source_file_gpu_ra
     "${gpu_ra_include}/tuple.cuh"
     "${gpu_ra_include}/hisa.hpp"
     "${gpu_ra_include}/lie.cuh"
+    "${gpu_ra_include}/hash.h"
     "${gpu_ra_src}/tuple.cu"
     "${gpu_ra_src}/print.cu"
     "${gpu_ra_src}/relation.cu"

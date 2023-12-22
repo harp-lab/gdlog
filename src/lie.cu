@@ -359,11 +359,11 @@ void LIE::fixpoint_loop() {
 
     print_memory_usage();
 
-    for (auto &[rel, thread] : updated_res_map) {
-        if (thread.joinable()) {
-            thread.join();
-        }
-    }
+    // for (auto &[rel, thread] : updated_res_map) {
+    //     if (thread.joinable()) {
+    //         thread.join();
+    //     }
+    // }
 
     // merge full after reach fixpoint
     timer.start_timer();
