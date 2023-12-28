@@ -8,6 +8,9 @@ set(gpu_ra_include "${PROJECT_SOURCE_DIR}/include")
 set(test_dir "${PROJECT_SOURCE_DIR}/test")
 
 # set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} $ENV{CUDA_NVCC_FLAGS} -lineinfo --default-stream per-thread --extended-lambda")
+# set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # does not produce the json file
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "") # works
+
 
 file(GLOB source_file_gpu_ra
     "${gpu_ra_include}/exception.cuh"
@@ -70,6 +73,7 @@ set_target_properties(gpu_ra PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 # using test
 include(CTest)
+# include(Catch)
 
 if (${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
     add_subdirectory(unittest)

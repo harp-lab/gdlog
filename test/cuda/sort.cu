@@ -109,13 +109,13 @@ int main() {
     //     std::cout << i << " ";
     // }
 
-    int data1[] = {1, 2, 4,
-                   2, 4, 7};
-    int data2[] = {1, 1, 3,
-                   5, 7, 3};
-    vec_size = 6;
-    int tp_size1 = 3;
-    int tp_size2 = 3;
+    int data1[] = {1, 2, 3, 3, 3, 7, 8, 8,
+                   1, 3, 1, 2, 5, 1, 2, 3};
+    int data2[] = {1, 2, 3, 3, 3, 5, 8, 9,
+                   8, 3, 3, 4, 6, 2, 2, 1};
+    vec_size = 16;
+    int tp_size1 = 8;
+    int tp_size2 = 8;
     thrust::host_vector<int> d_vec_merge1(data1, data1 + vec_size);
     thrust::host_vector<int> d_vec_merge2(data2, data2 + vec_size);
     thrust::device_vector<int> d_vec_merge1_dev = d_vec_merge1;
@@ -146,9 +146,9 @@ int main() {
                       [raw = d_vec_merge2_dev.begin() +
                              tp_size2, tp_size1] __device__(int i) { return raw[i-tp_size1]; });
     thrust::merge_by_key(thrust::device,
-                         d_vec_merge_tmp1.begin(), d_vec_merge_tmp1.end(),
                          d_vec_merge_tmp2.begin(), d_vec_merge_tmp2.end(),
-                         d_vec_merge_idx1.begin(), d_vec_merge_idx2.begin(),
+                         d_vec_merge_tmp1.begin(), d_vec_merge_tmp1.end(),
+                         d_vec_merge_idx2.begin(), d_vec_merge_idx1.begin(),
                          d_vec_merge_nonsence.begin(), d_vec_merge_res.begin());
 
     thrust::transform(
@@ -160,19 +160,19 @@ int main() {
         d_vec_merge_tmp2.begin(),
         [raw = d_vec_merge2_dev.begin(), tp_size1] __device__(int i) { return raw[i-tp_size1]; });
     thrust::merge_by_key(thrust::device,
-                         d_vec_merge_tmp1.begin(), d_vec_merge_tmp1.end(),
                          d_vec_merge_tmp2.begin(), d_vec_merge_tmp2.end(),
-                         d_vec_merge_idx1.begin(), d_vec_merge_idx2.begin(),
+                         d_vec_merge_tmp1.begin(), d_vec_merge_tmp1.end(),
+                         d_vec_merge_idx2.begin(), d_vec_merge_idx1.begin(),
                          d_vec_merge_nonsence.begin(), d_vec_merge_res.begin());
     
     // print res
     thrust::host_vector<int> res(vec_size);
     res = d_vec_merge_res;
     for (auto &i : res) {
-        if (i < 3) {
+        if (i < tp_size1) {
             std::cout << d_vec_merge1[i] << " " <<  d_vec_merge1[i+tp_size1] << std::endl;
         } else {
-            std::cout << d_vec_merge2[i - 3] << " "
+            std::cout << d_vec_merge2[i - tp_size1] << " "
                       << d_vec_merge2[i] << std::endl;
         }
     }

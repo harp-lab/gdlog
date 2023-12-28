@@ -19,6 +19,7 @@
 #include <thrust/sort.h>
 #include <thrust/transform.h>
 #include <thrust/unique.h>
+#include <utility>
 
 #include <thrust/host_vector.h>
 
@@ -52,38 +53,104 @@ void sort_raw_data(rmm::device_vector<col_type> &flatten_data,
     }
 }
 
-template <typename col_type, typename container_type,
-          typename column_index_type, typename col_size_type = col_type>
+template <typename T> void print_device_vector(rmm::device_vector<T> &vec) {
+    thrust::host_vector<T> vec_host(vec.begin(), vec.end());
+    for (auto i : vec_host) {
+        std::cout << i << " ";
+    }
+    std::cout << std::endl;
+}
+
+namespace compare {
+template <size_t I = 0, typename T, typename... Ts>
+__host__ __device__ constexpr bool
+tuple_less(const thrust::tuple<T, Ts...> &lhs,
+           const thrust::tuple<T, Ts...> &rhs) {
+    if (I < sizeof...(Ts)) {
+        return false;
+    }
+    if (thrust::get<I>(lhs) < thrust::get<I>(rhs)) {
+        return true;
+    } else if (thrust::get<I>(lhs) == thrust::get<I>(rhs)) {
+        return tuple_less<I + 1>(lhs, rhs);
+    } else {
+        return false;
+    }
+}
+
+template <size_t I = 0, typename T, typename... Ts>
+__host__ __device__ constexpr bool
+tuple_equal(const thrust::tuple<T, Ts...> &lhs,
+            const thrust::tuple<T, Ts...> &rhs) {
+    if (I < sizeof...(Ts)) {
+        return true;
+    }
+    if (thrust::get<I>(lhs) == thrust::get<I>(rhs)) {
+        return tuple_equal<I + 1>(lhs, rhs);
+    } else {
+        return false;
+    }
+}
+} // namespace compare
+// a variadic comparator for thrust::tuple
+struct tuple_comparator {
+    template <typename... Ts>
+    __host__ __device__ bool operator()(const thrust::tuple<Ts...> &lhs,
+                                        const thrust::tuple<Ts...> &rhs) {
+        return compare::tuple_less(lhs, rhs);
+    }
+};
+
+template <typename container_type, typename index_container_type>
 struct IndexColumn {
     // uint64_t size;
     // all value in current column, this vector is unique
     container_type data;
     // need a better hash map?
-    rmm::device_vector<column_index_type> hashes;
-    rmm::device_vector<col_size_type> index;
+    index_container_type hashes;
+    container_type index;
     // tuple permutation in hash order
-    rmm::device_vector<col_size_type> offsets;
+    container_type offsets;
     // tuple permutation in lexical order
-    rmm::device_vector<col_size_type> lex_offset;
+    container_type lex_offset;
 };
 
 template <typename container_type> struct DataColumn {
     container_type data;
 };
 
-template <typename col_type = column_data_type_default,
-          typename container_type = rmm::device_vector<col_type>,
-          typename column_index_type = index_type_default>
+template <typename Array, std::size_t... I>
+auto iter_tuple_begin(const Array &a, std::index_sequence<I...>) {
+    return thrust::make_tuple(a[I].data.begin()...);
+}
+template <typename Array, std::size_t... I>
+auto iter_tuple_end(const Array &a, std::index_sequence<I...>) {
+    return thrust::make_tuple(a[I].data.end()...);
+}
+// a function zip n vectors
+template <size_t N, typename T, typename Indices = std::make_index_sequence<N>>
+auto zip_iter_n(DataColumn<T> *col) {
+    return thrust::make_zip_iterator(iter_tuple_begin(col, Indices{}));
+}
+
+template <size_t ARITY, typename col_type = column_data_type_default,
+          typename column_index_type = index_type_default,
+          typename col_size_type = col_type,
+          typename data_container_type = rmm::device_vector<col_type>,
+          typename index_container_type = rmm::device_vector<column_index_type>,
+          typename col_size_container_type = rmm::device_vector<col_size_type>>
 struct HISA {
     using trie_column_type =
-        IndexColumn<col_type, container_type, column_index_type>;
+        IndexColumn<data_container_type, index_container_type>;
     trie_column_type *index_container;
-    using data_column_type = DataColumn<container_type>;
+    using data_column_type = DataColumn<data_container_type>;
     data_column_type *data_containers;
 
-    using self_type = HISA<col_type, container_type, column_index_type>;
+    using self_type = HISA<ARITY, col_type, column_index_type, col_size_type,
+                           data_container_type, index_container_type,
+                           col_size_container_type>;
 
-    int arity;
+    constexpr static size_t arity = ARITY;
     int index_column_size;
     int data_column_size;
     col_type total_row_size;
@@ -95,13 +162,10 @@ struct HISA {
     // follow the index ording
     bool sort_data_column_flag = true;
 
-    HISA(int arity, int index_column_size, bool compress_flag = true)
-        : arity(arity), index_column_size(index_column_size),
-          compress_flag(compress_flag) {
-        index_container =
-            new IndexColumn<col_type, container_type, column_index_type>;
-        data_containers = new DataColumn<container_type>[arity];
-        data_column_size = arity;
+    HISA(int index_column_size, bool compress_flag = true)
+        : index_column_size(index_column_size), compress_flag(compress_flag) {
+        index_container = new trie_column_type;
+        data_containers = new data_column_type[arity];
     }
 
     ~HISA() {
@@ -135,7 +199,9 @@ struct HISA {
         _dedup();
         timer.stop_timer();
         detail_time[2] += timer.get_spent_time();
-        std::cout << "dedup data" << std::endl;
+        // std::cout << "dedup data" << std::endl;
+
+        // remove from lex offset
 
         if (indexed_flag) {
             timer.start_timer();
@@ -145,52 +211,126 @@ struct HISA {
         }
     }
 
+    void difference(self_type &target, self_type &result) {
+        // difference using set difference
+        for (size_t i = 0; i < arity; i++) {
+            result.data_containers[i].data.resize(target.total_row_size);
+        }
+        auto this_tp_begin = zip_iter_n<arity>(data_containers);
+        auto target_tp_begin = zip_iter_n<arity>(target.data_containers);
+        auto result_tp_begin = zip_iter_n<arity>(result.data_containers);
+        auto res_end = thrust::set_difference(
+            rmm::exec_policy(), target_tp_begin,
+            target_tp_begin + target.total_row_size, this_tp_begin,
+            this_tp_begin + total_row_size, result_tp_begin);
+        auto res_size = res_end - result_tp_begin;
+        // what is type of auto here?
+        for (size_t i = 0; i < arity; i++) {
+            result.data_containers[i].data.resize(res_size);
+            result.data_containers[i].data.shrink_to_fit();
+        }
+        result.index_container->lex_offset.resize(res_size);
+        thrust::sequence(result.index_container->lex_offset.begin(),
+                         result.index_container->lex_offset.end());
+        result.total_row_size = res_size;
+    }
+
+    void intersect(self_type &target) {
+        // intersect using set intersection
+    }
+
+    void merge_unique(self_type &target) {
+        // merge using set union
+        auto old_size_before_merge = total_row_size;
+        _unordered_merge(target);
+        index_container->lex_offset.resize(total_row_size +
+                                           target.total_row_size);
+        thrust::sequence(
+            index_container->lex_offset.begin() + old_size_before_merge,
+            index_container->lex_offset.end(), old_size_before_merge);
+        total_row_size += target.total_row_size;
+        resort();
+    }
+
     // merge and deduplicates, leave set_differece tuples in target
     // need rebuild index for target after use this function
     void difference_and_merge(self_type &target) {
+        auto old_size_before_merge = total_row_size;
         rmm::device_vector<col_type> merged_index(total_row_size +
                                                   target.total_row_size);
         merged_index.shrink_to_fit();
-        _merge_permutation(target, merged_index);
+
         // _reorder_merge(target, merged_index);
-        _unordered_merge(target, merged_index);
-        rmm::device_vector<bool> unique_dedup(total_row_size);
+        _unordered_merge(target);
+        // std::cout << "extend data >>>>>>>>>> " << std::endl;
+        _merge_permutation(target, merged_index);
+        total_row_size = merged_index.size();
+        index_container->lex_offset.swap(merged_index);
+        merged_index.resize(0);
+        merged_index.shrink_to_fit();
+        print_tuples("after merge without dedup");
+
+        // std::cout << "merge permutation >>>>>>>>>> " << std::endl;;
+        rmm::device_vector<bool> unique_dedup(
+            index_container->lex_offset.size());
         thrust::fill(rmm::exec_policy(), unique_dedup.begin(),
                      unique_dedup.end(), false);
         _find_dup(unique_dedup);
+        print_device_vector(unique_dedup);
+        int duplicates = _remove_tuples_in_vec(unique_dedup);
         // drop all dups in permutation
         auto new_end_unique_dedup = thrust::remove_if(
-            rmm::exec_policy(), merged_index.begin(), merged_index.end(),
-            unique_dedup.begin(),
+            rmm::exec_policy(), index_container->lex_offset.begin(),
+            index_container->lex_offset.end(), unique_dedup.begin(),
             [] __device__(bool is_unique) { return !is_unique; });
-        auto new_perm_size = new_end_unique_dedup - merged_index.begin();
-        merged_index.resize(new_perm_size);
-        _remove_tuples_in_vec(unique_dedup);
+        auto new_perm_size =
+            new_end_unique_dedup - index_container->lex_offset.begin();
+        index_container->lex_offset.resize(new_perm_size);
+        // std::cout << "find dup >>>>>>>>>> " << std::endl;
+        print_device_vector(index_container->lex_offset);
+
+        // print_device_vector(data_containers[0].data);
+        // print_device_vector(data_containers[1].data);
+        std::cout << "remove dup >>>>>>>>>> " << std::endl;
         // partition to get all perm value originally in target
 
-        // TODO: populate existing ID using unique_dedup
-
+        int new_target_size = target.total_row_size - duplicates;
         rmm::device_vector<col_type> row_index_perm(total_row_size);
         thrust::sequence(row_index_perm.begin(), row_index_perm.end());
-        auto new_end_part = thrust::partition(
+        auto new_end = thrust::remove_if(
             rmm::exec_policy(), row_index_perm.begin(), row_index_perm.end(),
-            [total_size = total_row_size,
-             idx_ptr = merged_index.begin()] __device__(int p) {
-                return idx_ptr[p] >= total_size;
+            [ptr = index_container->lex_offset.data().get(),
+             total_row_size = old_size_before_merge] __device__(col_type a) {
+                return ptr[a] < total_row_size;
             });
-        auto new_size_delta = new_end_part - row_index_perm.begin();
-        row_index_perm.resize(new_size_delta);
+        row_index_perm.resize(new_end - row_index_perm.begin());
         row_index_perm.shrink_to_fit();
+        // rmm::device_vector<col_type> new_idx(new_target_size);
+        // thrust::sequence(new_idx.begin(), new_idx.end(), total_row_size);
+        // new_idx.shrink_to_fit();
+        // repalce all target index with new index
+        auto perm_begin = thrust::make_permutation_iterator(
+            index_container->lex_offset.begin(), row_index_perm.begin());
+        thrust::sequence(perm_begin, perm_begin + new_target_size,
+                         old_size_before_merge);
 
-        for (int i = arity - 1; i >= 0; i++) {
+        print_tuples("after dedup");
+        // copy back to target
+        for (int i = arity - 1; i >= 0; i--) {
             // need faster copy
-            auto &cur_column = data_containers + i;
-            auto &target_column = target.data_containers + i;
-            target_column->data.resize(row_index_perm.size());
-            thrust::gather(rmm::exec_policy(), row_index_perm.start(),
-                           row_index_perm.end(), cur_column->data.begin(),
-                           target_column->data.begin());
+            auto cur_column = data_containers + i;
+            auto target_column = target.data_containers + i;
+            target_column->data.resize(new_target_size);
+            std::cout << "copy " << cur_column->data.size() << " "
+                      << old_size_before_merge << std::endl;
+            thrust::copy(cur_column->data.begin() + old_size_before_merge,
+                         cur_column->data.end(), target_column->data.begin());
         }
+        target.total_row_size = new_target_size;
+        target.index_container->lex_offset.resize(new_target_size);
+        thrust::sequence(target.index_container->lex_offset.begin(),
+                         target.index_container->lex_offset.end());
+        // target.build_index();`
     }
 
     // merge and store merged permutation in merged_index
@@ -199,61 +339,50 @@ struct HISA {
     // target
     void _merge_permutation(self_type &target,
                             rmm::device_vector<col_type> &merged_index) {
-        rmm::device_vector<col_type> tmp_this_col(total_row_size);
-        rmm::device_vector<col_type> tmp_target_col(target.total_row_size);
+        // merge all data column using path merge algorithm
+        auto tmp_target_index_begin =
+            thrust::make_counting_iterator(total_row_size);
+        auto tmp_target_index_end =
+            tmp_target_index_begin + target.total_row_size;
 
-        rmm::device_vector<col_type> tmp_this_index(total_row_size);
-        rmm::device_vector<col_type> tmp_target_index(target.total_row_size);
-        // init idxs
-
-        thrust::copy(rmm::exec_policy(), index_container->lex_offset.begin(),
-                     index_container->lex_offset.end(), tmp_this_index.begin());
-        thrust::copy(
-            rmm::exec_policy(), target.index_container->lex_offset.begin(),
-            target.index_container->lex_offset.end(), tmp_target_index.begin());
-
-        // a bit vector halding useless merged tmp value, this just to conform
-        // thrust
-        rmm::device_vector<bool> useless(total_row_size +
-                                         target.total_row_size);
-
-        for (int cur_column_idx = arity - 1; cur_column_idx >= 0;
-             cur_column_idx--) {
-            data_column_type *cur_column = data_containers + cur_column_idx;
-            data_column_type *target_column =
-                target.data_containers + cur_column_idx;
-            // copy data to tmp
-            thrust::gather(rmm::exec_policy(), tmp_this_index.begin(),
-                           tmp_this_index.end(), cur_column->data.begin(),
-                           tmp_this_col.begin());
-            // do we have a better way to gather this from permutation
-            thrust::transform(
-                rmm::exec_policy(), target_column->data.begin(),
-                target_column->data.end(), tmp_target_col.begin(),
-                [raw_data_ptr = target_column->data.begin(),
-                 this_size =
-                     cur_column->data.size()] __device__(col_type data) {
-                    return raw_data_ptr[data - this_size];
-                });
-            tmp_target_col.shrink_to_fit();
-            tmp_this_col.shrink_to_fit();
-
-            // merge data column
-            // NOTE: target need to be the first and this need to be the second
-            // so that in dedup, we always leave `this` tuples
-            thrust::merge_by_key(rmm::exec_policy(), tmp_target_col.begin(),
-                                 tmp_target_col.end(), tmp_this_col.begin(),
-                                 tmp_this_col.end(), tmp_target_index.begin(),
-                                 tmp_this_index.begin(), useless.begin(),
-                                 merged_index.begin());
-            merged_index.shrink_to_fit();
+        merged_index.resize(total_row_size + target.total_row_size);
+        thrust::device_vector<col_type *> data_containers_ptr(arity);
+        for (int i = 0; i < arity; i++) {
+            data_containers_ptr[i] = data_containers[i].data.data().get();
         }
+
+        auto merge_end = thrust::merge(
+            rmm::exec_policy(), index_container->lex_offset.begin(),
+            index_container->lex_offset.end(), tmp_target_index_begin,
+            tmp_target_index_end, merged_index.begin(),
+            [data_containers = data_containers_ptr.data().get(),
+             arity = arity] __device__(col_type a, col_type b) -> bool {
+                for (int i = 0; i < arity; i++) {
+                    col_type *cur_column = data_containers[i];
+                    if (cur_column[a] != cur_column[b]) {
+                        return cur_column[a] < cur_column[b];
+                        ;
+                    }
+                }
+                return false;
+            });
+        // auto this_tp_begin = zip_iter_n<arity>(data_containers);
+        // auto target_tp_begin = this_tp_begin + total_row_size;
+        // auto merge_end = thrust::merge_by_key(
+        //     rmm::exec_policy(), index_container->lex_offset.begin(),
+        //     index_container->lex_offset.end(), tmp_target_index_begin,
+        //     tmp_target_index_end, this_tp_begin, target_tp_begin,
+        //     merged_index.begin(), tuple_comparator());
+
+        merged_index.resize(merge_end - merged_index.begin());
+        merged_index.shrink_to_fit();
+        thrust::host_vector<col_type> merged_index_host(merged_index.begin(),
+                                                        merged_index.end());
     }
 
     // this merge will not change any data, but just merge them directly
     // put target at the end
-    void _unordered_merge(self_type &target,
-                          rmm::device_vector<col_type> &merged_index) {
+    void _unordered_merge(self_type &target) {
         //
         for (int cur_column_idx = arity - 1; cur_column_idx >= 0;
              cur_column_idx--) {
@@ -269,49 +398,11 @@ struct HISA {
             thrust::copy(rmm::exec_policy(), target_column->data.begin(),
                          target_column->data.end(),
                          cur_column->data.begin() + old_size);
+            // clear target column
             target_column->data.resize(0);
             target_column->data.shrink_to_fit();
         }
         // fresh index
-        index_container->lex_offset = merged_index;
-    }
-
-    // merge two trie assume no duplicates
-    void _reorder_merge(self_type &target,
-                        rmm::device_vector<col_type> &merged_index) {
-        // merge all data column using path merge algorithm
-
-        rmm::device_vector<col_type> tmp_this_col(total_row_size);
-        rmm::device_vector<col_type> tmp_target_col(target.total_row_size);
-        tmp_target_col.shrink_to_fit();
-        tmp_this_col.shrink_to_fit();
-
-        // reorder tuples
-        for (int cur_column_idx = arity - 1; cur_column_idx >= 0;
-             cur_column_idx--) {
-            data_column_type *cur_column = data_containers + cur_column_idx;
-            auto old_size = cur_column->data.size();
-            data_column_type *target_column =
-                target.data_containers + cur_column_idx;
-            cur_column->data.swap(tmp_this_col);
-            cur_column->data.resize(merged_index.size());
-            thrust::transform(rmm::exec_policy(), merged_index.begin(),
-                              merged_index.end(), cur_column->data.begin(),
-                              [raw_this_ptr = cur_column->data.begin(),
-                               tmp_this_ptr = tmp_this_col.begin(),
-                               raw_target_ptr = target_column->data.begin(),
-                               old_size] __device__(col_type data) {
-                                  if (data < raw_this_ptr.size()) {
-                                      return raw_this_ptr[data];
-                                  } else {
-                                      return raw_target_ptr[data - old_size];
-                                  }
-                              });
-            cur_column->data.shrink_to_fit();
-            // clear target column
-            target_column->data.clear();
-            target_column->data.shrink_to_fit();
-        }
     }
 
     void build_index() {
@@ -330,68 +421,76 @@ struct HISA {
         for (int cur_column_idx = arity - 1; cur_column_idx >= 0;
              cur_column_idx--) {
             data_column_type *cur_column = data_containers + cur_column_idx;
-            // thrust::copy(rmm::exec_policy(), cur_column->data.begin(),
-            //              cur_column->data.end(), tmp_col.begin());
             thrust::gather(rmm::exec_policy(),
                            index_container->lex_offset.begin(),
                            index_container->lex_offset.end(),
                            cur_column->data.begin(), tmp_col.begin());
             rmm::device_vector<bool> dedup_tmp(total_row_size);
+            // print_device_vector(tmp_col);
             dedup_tmp[0] = true;
-            // thrust::for_each(
-            //     rmm::exec_policy(), thrust::counting_iterator<col_type>(0),
-            //     thrust::counting_iterator<col_type>(cur_column->data.size()),
-            //     [raw_data_ptr = tmp_col.begin(),
-            //      unique_dedup_ptr =
-            //          unique_dedup.begin()] __device__(col_type row_idx) {
-            //         if (row_idx == 0) {
-            //             unique_dedup_ptr[row_idx] = true;
-            //         } else {
-            //             unique_dedup_ptr[row_idx] =
-            //                 unique_dedup_ptr[row_idx - 1] &&
-            //                 (raw_data_ptr[row_idx] !=
-            //                  raw_data_ptr[row_idx - 1]);
-            //         }
-            //     });
             thrust::transform(rmm::exec_policy(), tmp_col.begin(),
                               tmp_col.end() - 1, tmp_col.begin() + 1,
                               dedup_tmp.begin() + 1,
                               [] __device__(col_type data_l, col_type data_r) {
                                   return data_l != data_r;
                               });
+            // print_device_vector(dedup_tmp);
             thrust::transform(rmm::exec_policy(), unique_dedup.begin(),
                               unique_dedup.end(), dedup_tmp.begin(),
                               unique_dedup.begin(),
                               [] __device__(bool a, bool b) { return a || b; });
+            // std::cout << "find dup " << cur_column_idx << std::endl;
         }
         // if its not sorted order by natural
-        tmp_col.resize(0);
-        tmp_col.shrink_to_fit();
-        rmm::device_vector<bool> dedup_tmp(total_row_size);
-        thrust::gather(rmm::exec_policy(), index_container->lex_offset.begin(),
-                       index_container->lex_offset.end(), unique_dedup.begin(),
-                       dedup_tmp.begin());
-        unique_dedup.swap(dedup_tmp);
+        // tmp_col.resize(0);
+        // tmp_col.shrink_to_fit();
+        // rmm::device_vector<bool> dedup_tmp(total_row_size);
+        // thrust::gather(rmm::exec_policy(),
+        // index_container->lex_offset.begin(),
+        //                index_container->lex_offset.end(),
+        //                unique_dedup.begin(), dedup_tmp.begin());
+        // unique_dedup.swap(dedup_tmp);
     }
 
     // NOTE: this remove is in NATRUAL order not LEX order
-    void _remove_tuples_in_vec(rmm::device_vector<bool> &unique_dedup) {
+    int _remove_tuples_in_vec(rmm::device_vector<bool> &unique_dedup) {
         int duplicates = thrust::count(rmm::exec_policy(), unique_dedup.begin(),
                                        unique_dedup.end(), false);
         // remove duplicated data
-        // rmm::device_vector<col_type> tmp_col(total_row_size);
+        rmm::device_vector<bool> unique_dedup_tmp(unique_dedup.size());
+        // thrust::gather(rmm::exec_policy(),
+        // index_container->lex_offset.begin(),
+        //                index_container->lex_offset.end(),
+        //                unique_dedup.begin(), unique_dedup_tmp.begin());
+        // thrust::sort_by_key(rmm::exec_policy(),
+        // index_container->lex_offset.begin(),
+        //                     index_container->lex_offset.end(),
+        //                     unique_dedup_tmp.begin());
+        thrust::for_each(
+            rmm::exec_policy(),
+            thrust::make_zip_iterator(thrust::make_tuple(
+                index_container->lex_offset.begin(), unique_dedup.begin())),
+            thrust::make_zip_iterator(thrust::make_tuple(
+                index_container->lex_offset.end(), unique_dedup.end())),
+            [tmp_ptr = unique_dedup_tmp.data().get()] __device__(
+                thrust::tuple<col_type, bool> t) {
+                tmp_ptr[thrust::get<0>(t)] = thrust::get<1>(t);
+            });
         for (int cur_column_idx = arity - 1; cur_column_idx >= 0;
              cur_column_idx--) {
             data_column_type *cur_column = data_containers + cur_column_idx;
             auto new_end = thrust::remove_if(
                 rmm::exec_policy(), cur_column->data.begin(),
-                cur_column->data.end(), unique_dedup.begin(),
+                cur_column->data.end(), unique_dedup_tmp.begin(),
                 [] __device__(bool is_unique) { return !is_unique; });
             cur_column->data.resize(new_end - cur_column->data.begin());
+            std::cout << "col after remove " << cur_column->data.size()
+                      << std::endl;
             cur_column->data.shrink_to_fit();
         }
         auto new_total_row_size = total_row_size - duplicates;
         total_row_size = new_total_row_size;
+        return duplicates;
     }
 
     // dedup all data column
@@ -406,13 +505,28 @@ struct HISA {
         thrust::fill(rmm::exec_policy(), unique_dedup.begin(),
                      unique_dedup.end(), false);
         _find_dup(unique_dedup);
-        std::cout << "find dup" << std::endl;
-        thrust::host_vector<bool> unique_dedup_host(unique_dedup);
-        for (auto i : unique_dedup_host) {
-            std::cout << i << " ";
-        }
-        std::cout << std::endl;
+        // std::cout << "find dup" << std::endl;
+        // thrust::host_vector<bool> unique_dedup_host(unique_dedup);
+        // for (auto i : unique_dedup_host) {
+        //     std::cout << i << " ";
+        // }
+        // std::cout << std::endl;
         _remove_tuples_in_vec(unique_dedup);
+
+        // assume this only called when data is sorted
+        index_container->lex_offset.resize(total_row_size);
+        thrust::sequence(index_container->lex_offset.begin(),
+                         index_container->lex_offset.end());
+        index_container->lex_offset.shrink_to_fit();
+
+        // auto new_end = thrust::remove_if(
+        //     rmm::exec_policy(), index_container->lex_offset.begin(),
+        //     index_container->lex_offset.end(), unique_dedup.begin(),
+        //     [] __device__(bool is_unique) { return !is_unique; });
+        // auto new_size = new_end - index_container->lex_offset.begin();
+        // std::cout << "new size " << new_size << std::endl;
+        // index_container->lex_offset.resize(new_size);
+        // index_container->lex_offset.shrink_to_fit();
     }
 
     // copy all data from flatten_data to trie
@@ -494,4 +608,163 @@ struct HISA {
         index_container->hashes.shrink_to_fit();
         index_container->index.shrink_to_fit();
     }
+
+    void resort() {
+        // resort index permutation
+        rmm::device_vector<col_type> tmp_col(total_row_size);
+        for (int cur_column_idx = arity - 1; cur_column_idx >= 0;
+             cur_column_idx--) {
+            data_column_type *cur_column = data_containers + cur_column_idx;
+            // copy sorted value into cur_column.data
+            // use gather to copy data
+            thrust::gather(rmm::exec_policy(),
+                           index_container->lex_offset.begin(),
+                           index_container->lex_offset.end(),
+                           cur_column->data.begin(), tmp_col.begin());
+            thrust::stable_sort_by_key(rmm::exec_policy(), tmp_col.begin(),
+                                       tmp_col.end(),
+                                       index_container->lex_offset.begin());
+        }
+        // reorder data column based on lex_offset
+        for (int cur_column_idx = arity - 1; cur_column_idx >= 0;
+             cur_column_idx--) {
+            data_column_type *cur_column = data_containers + cur_column_idx;
+            // copy sorted value into cur_column.data
+            // use gather to copy data
+            thrust::gather(rmm::exec_policy(),
+                           index_container->lex_offset.begin(),
+                           index_container->lex_offset.end(),
+                           cur_column->data.begin(), tmp_col.begin());
+            cur_column->data.swap(tmp_col);
+        }
+        thrust::sequence(index_container->lex_offset.begin(),
+                         index_container->lex_offset.end());
+    }
+
+    void print_tuples(char *msg) {
+        std::cout << "HISA >>> " << msg << std::endl;
+        std::cout << "Total tuples counts:  " << total_row_size << std::endl;
+        // copy to host
+        thrust::host_vector<col_type> host_indices(total_row_size);
+        thrust::copy(index_container->lex_offset.begin(),
+                     index_container->lex_offset.end(), host_indices.begin());
+        thrust::host_vector<col_type> *host_cols =
+            new thrust::host_vector<col_type>[arity];
+
+        for (int i = 0; i < arity; i++) {
+            host_cols[i].resize(total_row_size);
+            thrust::copy(data_containers[i].data.begin(),
+                         data_containers[i].data.end(), host_cols[i].begin());
+        }
+
+        for (auto &idx : host_indices) {
+            std::cout << idx << ":\t";
+            for (int i = 0; i < arity; i++) {
+                std::cout << host_cols[i][idx] << "\t";
+            }
+            std::cout << std::endl;
+        }
+        std::cout << "end <<<" << std::endl;
+
+        delete[] host_cols;
+    }
 };
+
+// /**
+//  * @brief HISA on host memory
+//  *
+//  * @tparam col_type
+//  * @tparam column_index_type
+//  */
+// template <typename col_type = column_data_type_default,
+//           typename column_index_type = index_type_default>
+// struct HISAHost {
+//     col_type total_row_size;
+//     int arity;
+//     int index_column_size;
+
+//     using trie_column_type = IndexColumn<thrust::host_vector<col_type>,
+//                                          thrust::host_vector<column_index_type>>;
+//     using data_column_type = DataColumn<thrust::host_vector<col_type>>;
+
+//     trie_column_type *index_container;
+//     data_column_type *data_containers;
+
+//     // HISAHost(int arity, int index_column_size)
+//     //     : arity(arity), index_column_size(index_column_size) {
+//     //     index_container = new trie_column_type;
+//     //     data_containers = new data_column_type[arity];
+//     // }
+
+//     // ~HISAHost() {
+//     //     delete index_container;
+//     //     delete[] data_containers;
+//     // }
+
+//     // HISAHost(HISA<col_type, column_index_type> device) {
+//     //     copy_from_device(device);
+//     // }
+
+//     // void copy_from_device(HISA<col_type, column_index_type> device) {
+//         // total_row_size = device.total_row_size;
+//         // arity = device.arity;
+//         // index_column_size = device.index_column_size;
+
+//         // for (int i = 0; i < arity; i++) {
+//         //     thrust::copy(device.data_containers[i].data,
+//         //                  device.data_containers[i].data + total_row_size,
+//         //                  data_containers[i].data.begin());
+//         //     // data_containers[i].data = device.data_containers[i].data;
+//         // }
+//         // thrust::copy(device.index_container->data.begin(),
+//         //              device.index_container->data.end(),
+//         //              index_container->data.begin());
+//         // // index_container->data = device.index_container->data;
+//         // thrust::copy(device.index_container->hashes.begin(),
+//         //              device.index_container->hashes.end(),
+//         //              index_container->hashes.begin());
+//         // // index_container->hashes = device.index_container->hashes;
+//         // thrust::copy(device.index_container->index.begin(),
+//         //              device.index_container->index.end(),
+//         //              index_container->index.begin());
+//         // // index_container->index = device.index_container->index;
+//         // thrust::copy(device.index_container->offsets.begin(),
+//         //              device.index_container->offsets.end(),
+//         //              index_container->offsets.begin());
+//         // // index_container->offsets = device.index_container->offsets;
+//         // thrust::copy(device.index_container->lex_offset.begin(),
+//         //              device.index_container->lex_offset.end(),
+//         //              index_container->lex_offset.begin());
+//         // index_container->lex_offset = device.index_container->lex_offset;
+//     // }
+// }
+
+template <size_t ARITY, typename col_type, typename column_index_type>
+void print_hisa(HISA<ARITY, col_type, column_index_type> &hisa, char *msg) {
+    std::cout << "HISA >>> " << msg << std::endl;
+    std::cout << "Total tuples counts:  " << hisa.total_row_size << std::endl;
+    // copy to host
+    thrust::host_vector<col_type> host_indices(hisa.total_row_size);
+    thrust::copy(hisa.index_container->lex_offset.begin(),
+                 hisa.index_container->lex_offset.end(), host_indices.begin());
+    thrust::host_vector<col_type> *host_cols =
+        new thrust::host_vector<col_type>[hisa.arity];
+
+    for (int i = 0; i < hisa.arity; i++) {
+        host_cols[i].resize(hisa.total_row_size);
+        // host_cols[i] = hisa.data_containers[i].data;
+        thrust::copy(hisa.data_containers[i].data.begin(),
+                     hisa.data_containers[i].data.end(), host_cols[i].begin());
+    }
+
+    for (auto &idx : host_indices) {
+        std::cout << idx << ":\t";
+        for (int i = 0; i < hisa.arity; i++) {
+            std::cout << host_cols[i][idx] << "\t";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << "end <<<" << std::endl;
+
+    delete[] host_cols;
+}

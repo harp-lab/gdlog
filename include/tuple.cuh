@@ -1,7 +1,6 @@
 #pragma once
 // #include <cuda_runtime.h>
 #include <functional>
-#include <thrust/device_ptr.h>
 
 using u64 = unsigned long long;
 using u32 = unsigned long;

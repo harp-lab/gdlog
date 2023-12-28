@@ -65,6 +65,10 @@ struct RelationalJoin {
                     counting_buf_t &result_offset_buf);
 };
 
+struct HashJoin {
+
+};
+
 /**
  * @brief Relation Algerbra kernal for PROJECTION Π
  *
