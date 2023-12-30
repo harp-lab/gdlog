@@ -7,16 +7,16 @@
 - Partial benchmarks can be run on other AMD GPUs, but they may result in program termination for certain datasets due to limited GPU memory, leading to an instance of the out of memory error.
 - AMD GPU MI250:
   - Supermicro AS-4124GQ-TNMI
-  – 2x AMD EPYC 7713 64c (Milan) 64C/128T 2.0GHz 256M 225W
-  – x4 AMD Instinct MI250 OAM 64GBx2 530W HBM2e PCIe Gen4
-  – 512GB DDR4-3200
-  – 1x EDR IB
-- AMD GPU MI50
+  - 2x AMD EPYC 7713 64c (Milan) 64C/128T 2.0GHz 256M 225W
+  - x4 AMD Instinct MI250 OAM 64GBx2 530W HBM2e PCIe Gen4
+  - 512GB DDR4-3200
+  - 1x EDR IB
+- AMD GPU MI50:
   - Gigabyte G482-Z51
-  – 2x 7742 64c Rome
-  – 4x AMD MI50 32GB GPUs
-  – Infinity Fabric
-  – 256GB DDR-3200 RAM
+  - 2x 7742 64c Rome
+  - 4x AMD MI50 32GB GPUs
+  - Infinity Fabric
+  - 256GB DDR-3200 RAM
 
 ### HIP (version 5.7 or later)
 - Download and install the rocm 5.7 or later
@@ -142,7 +142,7 @@ scp -r /media/shovon/Codes/GithubCodes/gdlog/data/dataset/ <USERNAME>@login.jlse
 ```
 
 ### HIP Benchmarking result
-- Benchmarking results can be found in [BeBenchmarking_Results.md](Benchmarking_Results.md)
+- Benchmarking results can be found in [Benchmarking_Results.md](Benchmarking_Results.md)
 
 ### Run cuDF on Polaris
 ```shell
