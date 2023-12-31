@@ -3,6 +3,18 @@ project(tc_gpu LANGUAGES CXX CUDA)
 
 find_package(rmm REQUIRED)
 
+include(${PROJECT_SOURCE_DIR}/CPM/CPM.cmake)
+
+CPMAddPackage(
+  NAME cuco
+  GITHUB_REPOSITORY NVIDIA/cuCollections
+  GIT_TAG dev
+  OPTIONS
+     "BUILD_TESTS OFF"
+     "BUILD_BENCHMARKS OFF"
+     "BUILD_EXAMPLES OFF"
+)
+
 set(gpu_ra_src "${PROJECT_SOURCE_DIR}/src")
 set(gpu_ra_include "${PROJECT_SOURCE_DIR}/include")
 set(test_dir "${PROJECT_SOURCE_DIR}/test")
@@ -61,11 +73,12 @@ file(GLOB source_file_dedup
 
 add_library(gpu_ra "${source_file_gpu_ra}")
 target_compile_features(gpu_ra PUBLIC cxx_std_20)
-target_link_libraries(gpu_ra PUBLIC rmm::rmm)
+target_link_libraries(gpu_ra PUBLIC rmm::rmm cuco CUDA::cudart)
 target_compile_options(gpu_ra PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:
     -lineinfo
+    --expt-relaxed-constexpr
     --default-stream per-thread
-    --extended-lambda>)
+    --expt-extended-lambda>)
 set_target_properties(gpu_ra PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 

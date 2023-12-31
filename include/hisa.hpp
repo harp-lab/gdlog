@@ -4,6 +4,7 @@
 
 #pragma once
 #include <cstdint>
+#include <cuco/static_map.cuh>
 #include <iostream>
 #include <rmm/device_vector.hpp>
 #include <rmm/exec_policy.hpp>
@@ -105,7 +106,11 @@ template <typename container_type, typename index_container_type>
 struct IndexColumn {
     // uint64_t size;
     // all value in current column, this vector is unique
-    container_type data;
+    // container_type data;
+    // TODO: need better typing
+    cuco::experimental::static_map<uint32_t, uint32_t> hash_map{
+        1, cuco::empty_key{0}, cuco::empty_value{0}};
+
     // need a better hash map?
     index_container_type hashes;
     container_type index;
@@ -140,9 +145,9 @@ template <size_t ARITY, typename col_type = column_data_type_default,
           typename index_container_type = rmm::device_vector<column_index_type>,
           typename col_size_container_type = rmm::device_vector<col_size_type>>
 struct HISA {
-    using trie_column_type =
+    using index_column_type =
         IndexColumn<data_container_type, index_container_type>;
-    trie_column_type *index_container;
+    index_column_type *index_container;
     using data_column_type = DataColumn<data_container_type>;
     data_column_type *data_containers;
 
@@ -155,6 +160,8 @@ struct HISA {
     int data_column_size;
     col_type total_row_size;
 
+    constexpr static float load_factor = 0.8f;
+
     bool compress_flag = true;
     bool indexed_flag = true;
 
@@ -164,7 +171,7 @@ struct HISA {
 
     HISA(int index_column_size, bool compress_flag = true)
         : index_column_size(index_column_size), compress_flag(compress_flag) {
-        index_container = new trie_column_type;
+        index_container = new index_column_type;
         data_containers = new data_column_type[arity];
     }
 
@@ -287,11 +294,11 @@ struct HISA {
             new_end_unique_dedup - index_container->lex_offset.begin();
         index_container->lex_offset.resize(new_perm_size);
         // std::cout << "find dup >>>>>>>>>> " << std::endl;
-        print_device_vector(index_container->lex_offset);
+        // print_device_vector(index_container->lex_offset);
 
         // print_device_vector(data_containers[0].data);
         // print_device_vector(data_containers[1].data);
-        std::cout << "remove dup >>>>>>>>>> " << std::endl;
+        // std::cout << "remove dup >>>>>>>>>> " << std::endl;
         // partition to get all perm value originally in target
 
         int new_target_size = target.total_row_size - duplicates;
@@ -314,15 +321,15 @@ struct HISA {
         thrust::sequence(perm_begin, perm_begin + new_target_size,
                          old_size_before_merge);
 
-        print_tuples("after dedup");
+        // print_tuples("after dedup");
         // copy back to target
         for (int i = arity - 1; i >= 0; i--) {
             // need faster copy
             auto cur_column = data_containers + i;
             auto target_column = target.data_containers + i;
             target_column->data.resize(new_target_size);
-            std::cout << "copy " << cur_column->data.size() << " "
-                      << old_size_before_merge << std::endl;
+            // std::cout << "copy " << cur_column->data.size() << " "
+            //           << old_size_before_merge << std::endl;
             thrust::copy(cur_column->data.begin() + old_size_before_merge,
                          cur_column->data.end(), target_column->data.begin());
         }
@@ -344,6 +351,8 @@ struct HISA {
             thrust::make_counting_iterator(total_row_size);
         auto tmp_target_index_end =
             tmp_target_index_begin + target.total_row_size;
+        auto this_index_begin = thrust::make_counting_iterator(0);
+        auto this_index_end = this_index_begin + total_row_size;
 
         merged_index.resize(total_row_size + target.total_row_size);
         thrust::device_vector<col_type *> data_containers_ptr(arity);
@@ -352,9 +361,8 @@ struct HISA {
         }
 
         auto merge_end = thrust::merge(
-            rmm::exec_policy(), index_container->lex_offset.begin(),
-            index_container->lex_offset.end(), tmp_target_index_begin,
-            tmp_target_index_end, merged_index.begin(),
+            rmm::exec_policy(), this_index_begin, this_index_end,
+            tmp_target_index_begin, tmp_target_index_end, merged_index.begin(),
             [data_containers = data_containers_ptr.data().get(),
              arity = arity] __device__(col_type a, col_type b) -> bool {
                 for (int i = 0; i < arity; i++) {
@@ -366,18 +374,9 @@ struct HISA {
                 }
                 return false;
             });
-        // auto this_tp_begin = zip_iter_n<arity>(data_containers);
-        // auto target_tp_begin = this_tp_begin + total_row_size;
-        // auto merge_end = thrust::merge_by_key(
-        //     rmm::exec_policy(), index_container->lex_offset.begin(),
-        //     index_container->lex_offset.end(), tmp_target_index_begin,
-        //     tmp_target_index_end, this_tp_begin, target_tp_begin,
-        //     merged_index.begin(), tuple_comparator());
 
         merged_index.resize(merge_end - merged_index.begin());
         merged_index.shrink_to_fit();
-        thrust::host_vector<col_type> merged_index_host(merged_index.begin(),
-                                                        merged_index.end());
     }
 
     // this merge will not change any data, but just merge them directly
@@ -412,8 +411,9 @@ struct HISA {
         _compute_hash_index();
     }
 
-    // find duplicated element in data columns and write them into unique vector
-    // not that when calling this function, all column has to be sorted
+    // find duplicated element in data columns and write them into unique
+    // vector not that when calling this function, all column has to be
+    // sorted
     void _find_dup(rmm::device_vector<bool> &unique_dedup) {
         rmm::device_vector<col_type> tmp_col(total_row_size);
         tmp_col.shrink_to_fit();
@@ -607,6 +607,16 @@ struct HISA {
         index_container->index.resize(new_size);
         index_container->hashes.shrink_to_fit();
         index_container->index.shrink_to_fit();
+
+        // put hashes and index into hash_map
+        hash_map = cuco::experimental::static_map<uint32_t, uint32_t>(
+            new_size, cuco::empty_key{0}, cuco::empty_value{0});
+        
+        auto zip_begin = thrust::make_zip_iterator(
+            thrust::make_tuple(index_container->hashes.begin(),
+                               index_container->index.begin()));
+        
+        hash_map.insert(zip_begin, zip_begin + new_size);
     }
 
     void resort() {
@@ -683,16 +693,16 @@ struct HISA {
 //     int arity;
 //     int index_column_size;
 
-//     using trie_column_type = IndexColumn<thrust::host_vector<col_type>,
+//     using index_column_type = IndexColumn<thrust::host_vector<col_type>,
 //                                          thrust::host_vector<column_index_type>>;
 //     using data_column_type = DataColumn<thrust::host_vector<col_type>>;
 
-//     trie_column_type *index_container;
+//     index_column_type *index_container;
 //     data_column_type *data_containers;
 
 //     // HISAHost(int arity, int index_column_size)
 //     //     : arity(arity), index_column_size(index_column_size) {
-//     //     index_container = new trie_column_type;
+//     //     index_container = new index_column_type;
 //     //     data_containers = new data_column_type[arity];
 //     // }
 
@@ -712,9 +722,11 @@ struct HISA {
 
 //         // for (int i = 0; i < arity; i++) {
 //         //     thrust::copy(device.data_containers[i].data,
-//         //                  device.data_containers[i].data + total_row_size,
+//         //                  device.data_containers[i].data +
+//         total_row_size,
 //         //                  data_containers[i].data.begin());
-//         //     // data_containers[i].data = device.data_containers[i].data;
+//         //     // data_containers[i].data =
+//         device.data_containers[i].data;
 //         // }
 //         // thrust::copy(device.index_container->data.begin(),
 //         //              device.index_container->data.end(),
@@ -735,7 +747,8 @@ struct HISA {
 //         // thrust::copy(device.index_container->lex_offset.begin(),
 //         //              device.index_container->lex_offset.end(),
 //         //              index_container->lex_offset.begin());
-//         // index_container->lex_offset = device.index_container->lex_offset;
+//         // index_container->lex_offset =
+//         device.index_container->lex_offset;
 //     // }
 // }
 
