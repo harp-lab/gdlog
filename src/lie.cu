@@ -4,10 +4,15 @@
 #include "../include/print.cuh"
 #include "../include/timer.cuh"
 #include <iostream>
+#include <map>
+#include <rmm/device_vector.hpp>
+#include <rmm/exec_policy.hpp>
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
-
+#include <thrust/sort.h>
+#include <thrust/transform.h>
+#include <thrust/unique.h>
 #include <variant>
 
 void LIE::add_ra(ra_op op) { ra_ops.push_back(op); }
@@ -34,6 +39,9 @@ void LIE::fixpoint_loop() {
     float rebuild_delta_time = 0;
     float flatten_full_time = 0;
     float memory_alloc_time = 0;
+    float sort_time = 0;
+    float unique_time = 0;
+    float init_tp_array_time = 0;
 
     float join_get_size_time = 0;
     float join_get_result_time = 0;
@@ -47,36 +55,39 @@ void LIE::fixpoint_loop() {
     std::cout << "start lie .... " << std::endl;
     // init full tuple buffer for all relation involved
     for (Relation *rel : update_relations) {
-        checkCuda(cudaMalloc((void **)&rel->tuple_full,
-                             rel->full->tuple_counts * sizeof(tuple_type)));
-        checkCuda(cudaMemcpy(rel->tuple_full, rel->full->tuples,
-                             rel->full->tuple_counts * sizeof(tuple_type),
-                             cudaMemcpyDeviceToDevice));
-        rel->current_full_size = rel->full->tuple_counts;
         copy_relation_container(rel->delta, rel->full, grid_size, block_size);
-        checkCuda(cudaDeviceSynchronize());
-        // std::cout << "wwwwwwwwww" << rel->delta->tuple_counts << std::endl;
     }
 
+    rmm::device_vector<tuple_type> deduplicated_newt_buf;
+    counting_buf_t join_counts_buf;
+    counting_buf_t join_offset_buf;
     while (true) {
         for (auto &ra_op : ra_ops) {
             timer.start_timer();
-            std::visit(dynamic_dispatch{[](RelationalJoin &op) {
-                                            // timer.start_timer();
-                                            op();
-                                        },
-                                        [](RelationalACopy &op) { op(); },
-                                        [](RelationalCopy &op) {
-                                            if (op.src_ver == FULL) {
-                                                if (!op.copied) {
-                                                    op();
-                                                    op.copied = true;
-                                                }
-                                            } else {
-                                                op();
-                                            }
-                                        }},
-                       ra_op);
+            std::visit(
+                dynamic_dispatch{
+                    [&](RelationalJoin &op) {
+                        // timer.start_timer();
+                        op(join_counts_buf, join_offset_buf);
+                        join_counts_buf.clear();
+                        join_offset_buf.clear();
+                        // join_offset_buf.shrink_to_fit();
+                        // join_counts_buf.shrink_to_fit();
+                    },
+                    [&](RelationalACopy &op) {
+                        op();
+                    },
+                    [&](RelationalCopy &op) {
+                        if (op.src_ver == FULL) {
+                            if (!op.copied) {
+                                op();
+                                op.copied = true;
+                            }
+                        } else {
+                            op();
+                        }
+                    }},
+                ra_op);
             timer.stop_timer();
             join_time += timer.get_spent_time();
         }
@@ -92,6 +103,39 @@ void LIE::fixpoint_loop() {
         bool fixpoint_flag = true;
         for (Relation *rel : update_relations) {
             std::cout << rel->name << std::endl;
+            // print_tuple_rows(rel->full, "Path full before populate
+            // >>>>>>>>>>>>>>>> ", false);
+            // populate newt
+            timer.start_timer();
+            rel->newt->tuples.resize(rel->newt->tuple_counts);
+            init_tuples_unsorted<<<grid_size, block_size>>>(
+                rel->newt->tuples.data().get(),
+                rel->newt->data_raw.data().get(), rel->arity,
+                rel->newt->tuple_counts);
+            checkCuda(cudaStreamSynchronize(0));
+            // print_tuple_raw_data(rel->newt, "Path newt before sort");
+            timer.stop_timer();
+            init_tp_array_time += timer.get_spent_time();
+            timer.start_timer();
+            thrust::sort(
+                rmm::exec_policy(), rel->newt->tuples.begin(),
+                rel->newt->tuples.end(),
+                tuple_indexed_less(rel->index_column_size, rel->arity));
+            timer.stop_timer();
+            sort_time += timer.get_spent_time();
+            timer.start_timer();
+            auto new_end =
+                thrust::unique(rmm::exec_policy(), rel->newt->tuples.begin(),
+                               rel->newt->tuples.end(), t_equal(rel->arity));
+            timer.stop_timer();
+            rel->newt->tuple_counts = new_end - rel->newt->tuples.begin();
+            rel->newt->tuples.resize(rel->newt->tuple_counts);
+            unique_time += timer.get_spent_time();
+
+            // if (iteration_counter == 0 && "value_flow_2__1_2" == rel->name) {
+            // print_tuple_rows(rel->newt, "Path newt after sort", false);
+            // }
+
             // if (rel->newt->tuple_counts != 0) {
             //     fixpoint_flag = false;
             // }
@@ -101,110 +145,105 @@ void LIE::fixpoint_loop() {
             // drop the index of delta once merged, because it won't be used in
             // next iter when migrate more general case, this operation need to
             // be put off to end of all RA operation in current iteration
-            if (rel->delta->index_map != nullptr) {
-                checkCuda(cudaFree(rel->delta->index_map));
-                rel->delta->index_map = nullptr;
-            }
-            if (rel->delta->tuples != nullptr) {
-                checkCuda(cudaFree(rel->delta->tuples));
-                rel->delta->tuples = nullptr;
-            }
+            rel->delta->index_map.clear();
+            rel->delta->index_map.shrink_to_fit();
+            rel->delta->tuples.clear();
+            rel->delta->tuples.shrink_to_fit();
+            // rel->delta->data_raw.shrink_to_fit();
 
             timer.start_timer();
+            rel->delta = new GHashRelContainer(
+                rel->arity, rel->index_column_size, rel->dependent_column_size);
             if (rel->newt->tuple_counts == 0) {
-                rel->delta =
-                    new GHashRelContainer(rel->arity, rel->index_column_size,
-                                          rel->dependent_column_size);
                 std::cout << "iteration " << iteration_counter << " relation "
                           << rel->name << " no new tuple added" << std::endl;
                 continue;
             }
-            tuple_type *deduplicated_newt_tuples;
-            u64 deduplicated_newt_tuples_mem_size =
-                rel->newt->tuple_counts * sizeof(tuple_type);
-            checkCuda(cudaMalloc((void **)&deduplicated_newt_tuples,
-                                 deduplicated_newt_tuples_mem_size));
-            checkCuda(cudaMemset(deduplicated_newt_tuples, 0,
-                                 deduplicated_newt_tuples_mem_size));
-            //////
 
-            tuple_type *deuplicated_end = thrust::set_difference(
-                thrust::device, rel->newt->tuples,
-                rel->newt->tuples + rel->newt->tuple_counts, rel->tuple_full,
-                rel->tuple_full + rel->current_full_size,
-                deduplicated_newt_tuples,
+            rel->delta->tuples.resize(rel->newt->tuple_counts);
+            //////
+            // print_tuple_rows(rel->newt, "Path newt before set diff", false);
+            // print_tuple_rows(rel->full, "Path full before set diff
+            // >>>>>>>>>>>>>>>> ", false);
+            auto deuplicated_end = thrust::set_difference(
+                rmm::exec_policy(), rel->newt->tuples.begin(),
+                rel->newt->tuples.end(), rel->full->tuples.begin(),
+                rel->full->tuples.begin() + rel->full->tuple_counts,
+                rel->delta->tuples.begin(),
                 tuple_indexed_less(rel->full->index_column_size,
                                    rel->full->arity -
                                        rel->dependent_column_size));
-            // checkCuda(cudaDeviceSynchronize());
+            // checkCuda(cudaStreamSynchronize(0));
             tuple_size_t deduplicate_size =
-                deuplicated_end - deduplicated_newt_tuples;
-
+                deuplicated_end - rel->delta->tuples.begin();
+            rel->delta->tuple_counts = deduplicate_size;
             if (deduplicate_size != 0) {
                 fixpoint_flag = false;
             }
             timer.stop_timer();
             set_diff_time += timer.get_spent_time();
-
-            column_type *deduplicated_raw;
-            u64 dedeuplicated_raw_mem_size =
-                deduplicate_size * rel->newt->arity * sizeof(column_type);
-            checkCuda(cudaMalloc((void **)&deduplicated_raw,
-                                 dedeuplicated_raw_mem_size));
-            checkCuda(
-                cudaMemset(deduplicated_raw, 0, dedeuplicated_raw_mem_size));
-            flatten_tuples_raw_data<<<grid_size, block_size>>>(
-                deduplicated_newt_tuples, deduplicated_raw, deduplicate_size,
-                rel->newt->arity);
-            checkCuda(cudaGetLastError());
-            checkCuda(cudaDeviceSynchronize());
-            checkCuda(cudaFree(deduplicated_newt_tuples));
-
-            free_relation_container(rel->newt);
-
             timer.start_timer();
-            float load_detail_time[5] = {0, 0, 0, 0, 0};
-            rel->delta = new GHashRelContainer(
-                rel->arity, rel->index_column_size, rel->dependent_column_size);
-            load_relation_container(
-                rel->delta, rel->full->arity, deduplicated_raw,
-                deduplicate_size, rel->full->index_column_size,
-                rel->full->dependent_column_size,
-                rel->full->index_map_load_factor, grid_size, block_size,
-                load_detail_time, true, true, true);
-            // checkCuda(cudaDeviceSynchronize());
+            rel->delta->data_raw.resize(deduplicate_size * rel->delta->arity);
+            flatten_tuples_raw_data_thrust(rel->delta->tuples.data().get(),
+                                           rel->delta->data_raw.data().get(),
+                                           deduplicate_size, rel->delta->arity);
+            rel->delta->data_raw.shrink_to_fit();
+            // init_tuples_unsorted(tuple_type *tuples, column_type *raw_data,
+            // int arity, tuple_size_t rows) use address in rel->delta->data_raw
+            // to re init delta->tuples
+            init_tuples_unsorted_thrust(rel->delta->tuples.data().get(),
+                                        rel->delta->data_raw.data().get(),
+                                        rel->delta->arity, deduplicate_size);
             timer.stop_timer();
             rebuild_delta_time += timer.get_spent_time();
-            rebuild_rel_sort_time += load_detail_time[0];
-            rebuild_rel_unique_time += load_detail_time[1];
-            rebuild_rel_index_time += load_detail_time[2];
+
+            // TODO: do we need free it actually? we can just set counts to 0
+            // free_relation_container(rel->newt);
+            rel->newt->tuples.shrink_to_fit();
+            rel->newt->data_raw.shrink_to_fit();
+            rel->newt->tuple_counts = 0;
+            rel->newt->data_raw_row_size = 0;
+
+            timer.start_timer();
+            rel->delta->update_index_map(grid_size, block_size);
+            timer.stop_timer();
+
+            rebuild_rel_index_time += timer.get_spent_time();
 
             // auto old_full = rel->tuple_full;
             float flush_detail_time[5] = {0, 0, 0, 0, 0};
             timer.start_timer();
             rel->flush_delta(grid_size, block_size, flush_detail_time);
+            // updated_res_map[rel] = std::thread([&]() {
+            //     rel->flush_delta(grid_size, block_size, flush_detail_time);
+            // });
             timer.stop_timer();
             merge_time += flush_detail_time[1];
             memory_alloc_time += flush_detail_time[0];
             memory_alloc_time += flush_detail_time[2];
             // checkCuda(cudaFree(old_full));
 
-            // print_tuple_rows(rel->full, "Path full after load newt");
+            // print_tuple_rows(rel->full, "Path full after merge
+            // >>>>>>>>>>>>>>>>>>>");
             std::cout << "iteration " << iteration_counter << " relation "
                       << rel->name
                       << " finish dedup new tuples : " << deduplicate_size
                       << " delta tuple size: " << rel->delta->tuple_counts
-                      << " full counts " << rel->current_full_size << std::endl;
+                      << " full counts " << rel->full->tuple_counts
+                      << std::endl;
         }
-        checkCuda(cudaDeviceSynchronize());
-        std::cout << "Iteration " << iteration_counter << " finish populating"
-                  << std::endl;
+        checkCuda(cudaStreamSynchronize(0));
+        // std::cout << "Iteration " << iteration_counter << " finish
+        // populating"
+        //           << std::endl;
         print_memory_usage();
         std::cout << "Join time: " << join_time
-              << " ; merge full time: " << merge_time
-              << " ; memory alloc time: " << memory_alloc_time
-              << " ; rebuild delta time: " << rebuild_delta_time
-              << " ; set diff time: " << set_diff_time << std::endl;
+                  << " ; sort newt time: " << sort_time
+                  << " ; unique newt time: " << unique_time
+                  << " ; merge full time: " << merge_time
+                  << " ; memory alloc time: " << memory_alloc_time
+                  << " ; rebuild delta time: " << rebuild_delta_time
+                  << " ; set diff time: " << set_diff_time << std::endl;
         iteration_counter++;
         // if (iteration_counter >= 3) {
         //     break;
@@ -213,56 +252,172 @@ void LIE::fixpoint_loop() {
         if (fixpoint_flag || iteration_counter > max_iteration) {
             break;
         }
+        // compute buffer/data_raw/tuples capcaity for each relation
+        u_int64_t total_size = 0;
+        u_int64_t total_size_full = 0;
+        u_int64_t total_size_full_buf = 0;
+        u_int64_t total_size_delta = 0;
+        u_int64_t total_size_newt = 0;
+        u_int64_t total_size_delta_size = 0;
+        u_int64_t total_size_delta_map_size = 0;
+
+        u_int64_t actual_size = 0;
+        u_int64_t actual_size_full = 0;
+        u_int64_t actual_size_full_buf = 0;
+        u_int64_t actual_size_delta = 0;
+        u_int64_t actual_size_newt = 0;
+
+        for (Relation *rel : update_relations) {
+            // full
+            total_size_full +=
+                rel->full->data_raw.capacity() * sizeof(column_type);
+            total_size_full +=
+                rel->full->tuples.capacity() * sizeof(tuple_type);
+            total_size_full +=
+                rel->full->index_map.capacity() * sizeof(MEntity);
+            total_size_full_buf +=
+                rel->tuple_merge_buffer.capacity() * sizeof(tuple_type);
+
+            actual_size_full +=
+                rel->full->data_raw.size() * sizeof(column_type);
+            actual_size_full += rel->full->tuples.size() * sizeof(tuple_type);
+            actual_size_full += rel->full->index_map.size() * sizeof(MEntity);
+            actual_size_full_buf +=
+                rel->tuple_merge_buffer.size() * sizeof(tuple_type);
+
+            total_size_delta +=
+                rel->delta->data_raw.capacity() * sizeof(column_type);
+            total_size_delta +=
+                rel->delta->tuples.capacity() * sizeof(tuple_type);
+            total_size_delta +=
+                rel->delta->index_map.capacity() * sizeof(MEntity);
+            
+            actual_size_delta +=
+                rel->delta->data_raw.size() * sizeof(column_type);
+            actual_size_delta += rel->delta->tuples.size() * sizeof(tuple_type);
+            actual_size_delta +=
+                rel->delta->index_map.size() * sizeof(MEntity);
+            
+            // delta
+            for (auto &delta_b : rel->buffered_delta_vectors) {
+                total_size_delta +=
+                    delta_b->data_raw.capacity() * sizeof(column_type);
+                total_size_delta +=
+                    delta_b->tuples.capacity() * sizeof(tuple_type);
+                total_size_delta +=
+                    delta_b->index_map.capacity() * sizeof(MEntity);
+
+                actual_size_delta +=
+                    delta_b->data_raw.size() * sizeof(column_type);
+                actual_size_delta +=
+                    delta_b->tuples.size() * sizeof(tuple_type);
+                actual_size_delta +=
+                    delta_b->index_map.size() * sizeof(MEntity);
+
+                total_size_delta_size += delta_b->tuples.size();
+                total_size_delta_map_size += delta_b->index_map.size();
+            }
+
+            // newt
+            total_size_newt +=
+                rel->newt->data_raw.capacity() * sizeof(column_type);
+            total_size_newt +=
+                rel->newt->tuples.capacity() * sizeof(tuple_type);
+            total_size_newt += rel->newt->index_map.capacity() *
+                               sizeof(MEntity) * rel->newt->arity;
+
+            actual_size_newt +=
+                rel->newt->data_raw.size() * sizeof(column_type);
+            actual_size_newt += rel->newt->tuples.size() * sizeof(tuple_type);
+            actual_size_newt += rel->newt->index_map.size() * sizeof(MEntity) *
+                                rel->newt->arity;
+        }
+        total_size += total_size_full + total_size_delta + total_size_newt +
+                      total_size_full_buf;
+
+        actual_size += actual_size_full + actual_size_delta + actual_size_newt +
+                       actual_size_full_buf;
+        std::cout << "Total size >>>>>>>>>>>>>>>" << std::endl;
+        std::cout << "Iteration " << iteration_counter << " finish populating"
+                  << " total size: " << total_size
+                  << " full size: " << total_size_full
+                  << " delta size: " << total_size_delta
+                  << " newt size: " << total_size_newt
+                  << " full buf size: " << total_size_full_buf
+                //   << " delta size: " << total_size_delta_size
+                //   << " delta map size: " << total_size_delta_map_size
+                  << std::endl;
+        std::cout << "Actual size >>>>>>>>>>>>>>>" << std::endl;
+        std::cout << "Iteration " << iteration_counter << " finish populating"
+                  << " actual size: " << actual_size
+                  << " full size: " << actual_size_full
+                  << " delta size: " << actual_size_delta
+                  << " newt size: " << actual_size_newt
+                  << " full buf size: " << actual_size_full_buf
+                  << std::endl;
     }
+
+    print_memory_usage();
+
+    // for (auto &[rel, thread] : updated_res_map) {
+    //     if (thread.joinable()) {
+    //         thread.join();
+    //     }
+    // }
+
     // merge full after reach fixpoint
     timer.start_timer();
     if (reload_full_flag) {
         std::cout << "Start merge full" << std::endl;
-    for (Relation *rel : update_relations) {
-        // if (rel->current_full_size <= rel->full->tuple_counts) {
-        //     continue;
-        // }
-        column_type *new_full_raw_data;
-        u64 new_full_raw_data_mem_size =
-            rel->current_full_size * rel->full->arity * sizeof(column_type);
-        checkCuda(cudaMalloc((void **)&new_full_raw_data,
-                             new_full_raw_data_mem_size));
-        checkCuda(cudaMemset(new_full_raw_data, 0, new_full_raw_data_mem_size));
-        flatten_tuples_raw_data<<<grid_size, block_size>>>(
-            rel->tuple_full, new_full_raw_data, rel->current_full_size,
-            rel->full->arity);
-        checkCuda(cudaGetLastError());
-        checkCuda(cudaDeviceSynchronize());
-        // cudaFree(tuple_merge_buffer);
-        float load_detail_time[5] = {0, 0, 0, 0, 0};
-        load_relation_container(
-            rel->full, rel->full->arity, new_full_raw_data,
-            rel->current_full_size, rel->full->index_column_size,
-            rel->full->dependent_column_size, rel->full->index_map_load_factor,
-            grid_size, block_size, load_detail_time, true, true, true);
-        checkCuda(cudaDeviceSynchronize());
-        rebuild_rel_sort_time += load_detail_time[0];
-        rebuild_rel_unique_time += load_detail_time[1];
-        rebuild_rel_index_time += load_detail_time[2];
-        std::cout << "Finished! " << rel->name << " has "
-                  << rel->full->tuple_counts << std::endl;
-        for (auto &delta_b : rel->buffered_delta_vectors) {
-            free_relation_container(delta_b);
+        for (Relation *rel : update_relations) {
+            std::cout << "Start merge full for " << rel->name << std::endl;
+            KernelTimer timer;
+            // if (rel->current_full_size <= rel->full->tuple_counts) {
+            //     continue;
+            // }
+            std::cout << rel->name << " full size: " << rel->full->tuple_counts
+                      << "   " << rel->arity << std::endl;
+            timer.start_timer();
+            rel->full->data_raw.resize(rel->full->tuple_counts * rel->arity);
+            rel->tuple_merge_buffer.resize(0);
+            rel->tuple_merge_buffer.shrink_to_fit();
+            // cudaFree(tuple_merge_buffer);
+            checkCuda(cudaStreamSynchronize(0));
+            flatten_tuples_raw_data_thrust(rel->full->tuples.data().get(),
+                                           rel->full->data_raw.data().get(),
+                                           rel->full->tuple_counts, rel->arity);
+            std::cout << "Finished flatten full" << std::endl;
+            init_tuples_unsorted_thrust(rel->full->tuples.data().get(),
+                                        rel->full->data_raw.data().get(),
+                                        rel->arity, rel->full->tuple_counts);
+            timer.stop_timer();
+            flatten_full_time += timer.get_spent_time();
+            checkCuda(cudaStreamSynchronize(0));
+            timer.start_timer();
+            rel->full->update_index_map(grid_size, block_size);
+            timer.stop_timer();
+            rebuild_rel_index_time += timer.get_spent_time();
+            std::cout << "Finished! " << rel->name << " has "
+                      << rel->full->tuple_counts << std::endl;
+            for (auto &delta_b : rel->buffered_delta_vectors) {
+                free_relation_container(delta_b);
+            }
+            free_relation_container(rel->delta);
+            free_relation_container(rel->newt);
         }
-        free_relation_container(rel->delta);
-        free_relation_container(rel->newt);
-    }
     } else {
         for (Relation *rel : update_relations) {
             std::cout << "Finished! " << rel->name << " has "
-                  << rel->full->tuple_counts << std::endl;
+                      << rel->full->tuple_counts << std::endl;
         }
     }
     timer.stop_timer();
     float merge_full_time = timer.get_spent_time();
 
+    cudaDeviceSynchronize();
     std::cout << "Join time: " << join_time
               << " ; merge full time: " << merge_time
+              << " ; sort newt time: " << sort_time
               << " ; rebuild full time: " << merge_full_time
               << " ; rebuild delta time: " << rebuild_delta_time
               << " ; set diff time: " << set_diff_time << std::endl;

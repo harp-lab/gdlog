@@ -5,6 +5,7 @@
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
+#include <thrust/unique.h>
 #include <vector>
 
 #include "../include/exception.cuh"
@@ -12,11 +13,8 @@
 #include "../include/print.cuh"
 #include "../include/timer.cuh"
 
-#include <rmm/mr/device/cuda_memory_resource.hpp>
-#include <rmm/mr/device/per_device_resource.hpp>
-#include <rmm/mr/device/pool_memory_resource.hpp>
-#include <rmm/mr/device/managed_memory_resource.hpp>
-
+#define REPEAT 10
+#define MAX_ITERATION 2
 //////////////////////////////////////////////////////
 
 long int get_row_size(const char *data_path) {
@@ -63,7 +61,6 @@ column_type *get_relation_from_file(const char *file_path, int total_rows,
 
 //////////////////////////////////////////////////////////////////
 
-
 __device__ void reorder_path(tuple_type inner, tuple_type outer,
                              tuple_type newt) {
     newt[0] = inner[1];
@@ -74,26 +71,14 @@ __device__ void reorder_path1(tuple_type inner, tuple_type outer,
     newt[0] = outer[1];
     newt[1] = inner[1];
 };
-
-// sg(x, y) :-  edge(a, x), edge(b, y), sg(a, b)
-// __device__ void reorder_path1_3arity(tuple_type inner1, tuple_type inner2, tuple_type outer,
-//                                      tuple_type newt) {
-//     newt[0] = inner1[1];
-//     newt[1] = inner2[1];
-// };
-
 __device__ tuple_generator_hook reorder_path_device = reorder_path;
 __device__ tuple_generator_hook reorder_path1_device = reorder_path1;
-// __device__ tuple_generator_hook reorder_path1_3arity_device = reorder_path1_3arity;
 
 __device__ void cp_1(tuple_type src, tuple_type dest) {
     dest[0] = src[1];
     dest[1] = src[0];
 }
 __device__ tuple_copy_hook cp_1_device = cp_1;
-
-__device__ bool tuple_pred_eq_11(tuple_type t) { return t[0] != t[1]; }
-__device__ tuple_predicate tuple_pred_eq_11_device = tuple_pred_eq_11;
 
 void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     KernelTimer timer;
@@ -111,6 +96,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
         get_relation_from_file(dataset_path, graph_edge_counts, 2, '\t', U32);
     column_type *raw_reverse_graph_data =
         (column_type *)malloc(graph_edge_counts * 2 * sizeof(column_type));
+
     std::cout << "reversing graph ... " << std::endl;
     for (tuple_size_t i = 0; i < graph_edge_counts; i++) {
         raw_reverse_graph_data[i * 2 + 1] = raw_graph_data[i * 2];
@@ -119,71 +105,43 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     std::cout << "finish reverse graph." << std::endl;
 
     timer.start_timer();
-    Relation *edge_2__1_2 = new Relation();
     Relation *edge_2__2_1 = new Relation();
-    load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
-                  graph_edge_counts, 1, 0, grid_size, block_size);
     // cudaMallocHost((void **)&edge_2__2_1, sizeof(Relation));
-    Relation *sg_2__1_2 = new Relation();
-    sg_2__1_2->index_flag = false;
+    Relation *path_2__1_2 = new Relation();
+    path_2__1_2->index_flag = false;
     // cudaMallocHost((void **)&path_2__1_2, sizeof(Relation));
     std::cout << "edge size " << graph_edge_counts << std::endl;
-    load_relation(sg_2__1_2, "sg_2__2_1", 2, nullptr, 0, 1, 0, grid_size,
-                  block_size);
-    load_relation(edge_2__1_2, "edge_2__1_2", 2, raw_graph_data,
+    load_relation(path_2__1_2, "path_2__1_2", 2, raw_graph_data,
+                  graph_edge_counts, 1, 0, grid_size, block_size);
+    load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
                   graph_edge_counts, 1, 0, grid_size, block_size);
     timer.stop_timer();
     // double kernel_spent_time = timer.get_spent_time();
     std::cout << "Build hash table time: " << timer.get_spent_time()
               << std::endl;
-    float join_detail[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+
     timer.start_timer();
-    LIE init_scc(grid_size, block_size);
-    init_scc.add_relations(edge_2__1_2, true);
-    init_scc.add_relations(sg_2__1_2, false);
-    // sg(x, y) :- edge(p, x), edge(p, y), x != y.
-    // sg:y,x
+    LIE tc_scc(grid_size, block_size);
+    tc_scc.reload_full_flag = false;
+    tc_scc.add_relations(edge_2__2_1, true);
+    tc_scc.add_relations(path_2__1_2, false);
+    float join_detail[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
     tuple_generator_hook reorder_path_host;
     cudaMemcpyFromSymbol(&reorder_path_host, reorder_path_device,
                          sizeof(tuple_generator_hook));
-    tuple_predicate tuple_pred_eq_11_host;
-    cudaMemcpyFromSymbol(&tuple_pred_eq_11_host, tuple_pred_eq_11_device,
-                         sizeof(tuple_predicate));
-    init_scc.add_ra(RelationalJoin(
-        edge_2__1_2, FULL, edge_2__1_2, FULL, sg_2__1_2, reorder_path_host,
-        tuple_pred_eq_11_host, LEFT, grid_size, block_size, join_detail));
-    init_scc.fixpoint_loop();
+    tuple_copy_hook cp_1_host;
+    cudaMemcpyFromSymbol(&cp_1_host, cp_1_device, sizeof(tuple_copy_hook));
+    RelationalJoin join_op(edge_2__2_1, FULL, path_2__1_2, DELTA, path_2__1_2,
+                           reorder_path_host, nullptr, LEFT, grid_size,
+                           block_size, join_detail);
+    tc_scc.add_ra(join_op);
+
+    tc_scc.fixpoint_loop();
+
     timer.stop_timer();
-    std::cout << "sg init counts " << sg_2__1_2->full->tuple_counts
-              << std::endl;
-    std::cout << "sg init time: " << timer.get_spent_time() << std::endl;
-
-    LIE sg_lie(grid_size, block_size);
-    Relation *tmp = new Relation();
-    load_relation(tmp, "tmp", 2, nullptr, 0, 1, 0, grid_size, block_size);
-    tmp->index_flag = false;
-    sg_lie.add_relations(edge_2__1_2, true);
-    sg_lie.add_relations(sg_2__1_2, false);
-
-    sg_lie.add_tmp_relation(tmp);
-    // sg(x, y) :- edge(a, x), sg(a, b), edge(b, y).
-    // tmp(b,x) :- edge(a, x), sg(a, b).
-    tuple_generator_hook reorder_path1_host;
-    cudaMemcpyFromSymbol(&reorder_path1_host, reorder_path1_device,
-                         sizeof(tuple_generator_hook));
-    sg_lie.add_ra(RelationalJoin(edge_2__1_2, FULL, sg_2__1_2, DELTA, tmp,
-                                 reorder_path1_host, nullptr, LEFT, grid_size,
-                                 block_size, join_detail));
-    // sg(x, y) :- edge(b, y), tmp(b, x).
-    sg_lie.add_ra(RelationalJoin(edge_2__1_2, FULL, tmp, NEWT, sg_2__1_2,
-                                 reorder_path1_host, nullptr, LEFT, grid_size,
-                                 block_size, join_detail));
-    timer.start_timer();
-    sg_lie.fixpoint_loop();
-    timer.stop_timer();
-    std::cout << "sg counts " << sg_2__1_2->full->tuple_counts << std::endl;
-    std::cout << "sg time: " << timer.get_spent_time() << std::endl;
-
+    std::cout << "Path counts " << path_2__1_2->full->tuple_counts << std::endl;
+    // print_tuple_rows(path_2__2_1->full, "full");
+    std::cout << "TC time: " << timer.get_spent_time() << std::endl;
     std::cout << "join detail: " << std::endl;
     std::cout << "compute size time:  " << join_detail[0] << std::endl;
     std::cout << "reduce + scan time: " << join_detail[1] << std::endl;
@@ -193,6 +151,74 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     std::cout << "merge time:         " << join_detail[6] << std::endl;
     std::cout << "unique time:        " << join_detail[4] + join_detail[7]
               << std::endl;
+
+    join_op();
+    print_memory_usage();
+    // deduplicate with full
+    // time_point_begin = std::chrono::high_resolution_clock::now();
+    // std::cout << "start deduplicate with full ..." << std::endl;
+    std::cout << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" << std::endl;
+    std::cout << "start comparing 2 deduplication methods ..." << std::endl;
+    std::cout << "repeat " << REPEAT << " times" << std::endl;
+    tuple_type *tuple_newt;
+    cudaMalloc((void **)&tuple_newt,
+               path_2__1_2->newt->tuple_counts * sizeof(tuple_type));
+    cudaMemcpy(tuple_newt, path_2__1_2->newt->tuples,
+               path_2__1_2->newt->tuple_counts * sizeof(tuple_type),
+               cudaMemcpyDeviceToDevice);
+    tuple_type *dedup_buf;
+    cudaMalloc((void **)&dedup_buf,
+               path_2__1_2->newt->tuple_counts * sizeof(tuple_type));
+    cudaStreamSynchronize(0);
+    double dedup_time_set_difference = 0;
+    for (int i = 0; i < REPEAT; i++) {
+        timer.start_timer();
+        tuple_type *dedup_buf_end = thrust::set_difference(
+            thrust::device, tuple_newt,
+            tuple_newt + path_2__1_2->newt->tuple_counts,
+            path_2__1_2->tuple_full,
+            path_2__1_2->tuple_full + path_2__1_2->current_full_size, dedup_buf,
+            tuple_indexed_less(path_2__1_2->full->index_column_size,
+                               path_2__1_2->full->arity -
+                                   path_2__1_2->dependent_column_size));
+        tuple_size_t tp_counts = dedup_buf_end - dedup_buf;
+        timer.stop_timer();
+        dedup_time_set_difference += timer.get_spent_time();
+        // recover tuple_newt
+        cudaMemcpy(tuple_newt, path_2__1_2->newt->tuples,
+                   path_2__1_2->newt->tuple_counts * sizeof(tuple_type),
+                   cudaMemcpyDeviceToDevice);
+    }
+    std::cout << "deduplicate with full time: " << dedup_time_set_difference
+              << std::endl;
+
+    // deduplicate with hand written kernel
+    // time_point_begin = std::chrono::high_resolution_clock::now();
+    double dedup_time_hand_written = 0;
+    tuple_type *deduped_tuples_n;
+    cudaMalloc(&deduped_tuples_n,
+               path_2__1_2->newt->tuple_counts * sizeof(tuple_type));
+    GHashRelContainer *fullt_device;
+    cudaMalloc(&fullt_device, sizeof(GHashRelContainer));
+    checkCuda(cudaMemcpy(fullt_device, path_2__1_2->full,
+                         sizeof(GHashRelContainer), cudaMemcpyHostToDevice));
+    for (int i = 0; i < REPEAT; i++) {
+        timer.start_timer();
+        find_duplicate_tuples<<<grid_size, block_size>>>(
+            fullt_device, tuple_newt, path_2__1_2->newt->tuple_counts, nullptr,
+            nullptr);
+        checkCuda(cudaStreamSynchronize(0));
+        thrust::unique(thrust::device, tuple_newt,
+                       tuple_newt + path_2__1_2->newt->tuple_counts);
+        timer.stop_timer();
+        dedup_time_hand_written += timer.get_spent_time();
+        // recover tuple_newt
+        cudaMemcpy(tuple_newt, path_2__1_2->newt->tuples,
+                   path_2__1_2->newt->tuple_counts * sizeof(tuple_type),
+                   cudaMemcpyDeviceToDevice);
+    }
+    std::cout << "deduplicate with hand written kernel time: "
+              << dedup_time_hand_written << std::endl;
 }
 
 int main(int argc, char *argv[]) {
@@ -209,10 +235,6 @@ int main(int argc, char *argv[]) {
     grid_size = 32 * number_of_sm;
     std::locale loc("");
 
-    // rmm::mr::cuda_memory_resource cuda_mr{};
-    // rmm::mr::pool_memory_resource<rmm::mr::cuda_memory_resource> mr{&cuda_mr};
-    // rmm::mr::managed_memory_resource mr;
-    // rmm::mr::set_current_device_resource(&mr);
     analysis_bench(argv[1], block_size, grid_size);
     return 0;
 }

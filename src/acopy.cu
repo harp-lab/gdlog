@@ -1,13 +1,27 @@
-#include <iostream>
-#include <thrust/execution_policy.h>
-#include <thrust/reduce.h>
-#include <thrust/scan.h>
-#include <thrust/unique.h>
-
 #include "../include/exception.cuh"
 #include "../include/print.cuh"
 #include "../include/relational_algebra.cuh"
 #include "../include/timer.cuh"
+#include <iostream>
+#include <rmm/exec_policy.hpp>
+#include <thrust/execution_policy.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/reduce.h>
+#include <thrust/scan.h>
+#include <thrust/sort.h>
+#include <thrust/transform.h>
+#include <thrust/unique.h>
+
+// struct acopy_init_unsort_func {
+//     column_type* data_raw;
+//     int output_arity;
+
+//     acopy_init_unsort_func(column_type* data_raw, int output_arity)
+//         : data_raw(data_raw), output_arity(output_arity) {}
+//     __device__ tuple_type operator()(int index) {
+//         return data_raw + index * output_arity;
+//     }
+// };
 
 void RelationalACopy::operator()() {
 
@@ -17,34 +31,43 @@ void RelationalACopy::operator()() {
               << std::endl;
 
     if (src->tuple_counts == 0) {
-        free_relation_container(dest);
-        dest->tuple_counts = 0;
         return;
     }
 
     int output_arity = dest_rel->arity;
-    column_type *copied_raw_data;
-    u64 copied_raw_data_size =
-        src->tuple_counts * output_arity * sizeof(column_type);
-    checkCuda(cudaMalloc((void **)&copied_raw_data, copied_raw_data_size));
-    checkCuda(cudaMemset(copied_raw_data, 0, copied_raw_data_size));
-    get_copy_result<<<grid_size, block_size>>>(src->tuples, copied_raw_data,
-                                               output_arity, src->tuple_counts,
-                                               tuple_generator);
-    checkCuda(cudaGetLastError());
-    checkCuda(cudaDeviceSynchronize());
 
-    free_relation_container(dest);
-    float detail_time[5] = {0, 0, 0, 0, 0};
-    // TODO: swap to repartition_relation_index in future
-    load_relation_container(dest, dest->arity, copied_raw_data,
-                            src->tuple_counts, src->index_column_size,
-                            dest->dependent_column_size, 0.8, grid_size,
-                            block_size, detail_time, true, false, true);
-    checkCuda(cudaDeviceSynchronize());
-    // print_tuple_rows(dest, "delta");
-    // merge delta to full immediately here
-    // dest_rel->flush_delta(grid_size, block_size);
-    // std::cout << dest->tuple_counts << std::endl;
-    // print_tuple_rows(dest, "acopied");
+    // dest->tuples.resize(src->tuple_counts);
+    dest->tuple_counts = src->tuple_counts;
+    dest->data_raw.resize(src->data_raw_row_size * dest->arity);
+    dest->data_raw_row_size = src->data_raw_row_size;
+
+    // get_copy_result<<<grid_size, block_size>>>(
+    //     src->tuples.data().get(), dest->data_raw.data().get(), output_arity,
+    //     src->tuple_counts, tuple_generator);
+    thrust::copy(rmm::exec_policy(), src->data_raw.data(),
+                 src->data_raw.data() + src->data_raw_row_size,
+                 dest->data_raw.data());
+    thrust::counting_iterator<tuple_size_t> index_sequence_begin(0);
+    thrust::counting_iterator<tuple_size_t> index_sequence_end(
+        src->tuple_counts);
+    thrust::for_each(
+        rmm::exec_policy(), index_sequence_begin, index_sequence_end,
+        [tp_gen = tuple_generator, arity = output_arity,
+         dest_raw = dest->data_raw.data().get(),
+         src_raw = src->data_raw.data().get()] __device__(tuple_size_t index) {
+            (*tp_gen)(src_raw + index * arity, dest_raw + index * arity);
+        });
+
+    checkCuda(cudaStreamSynchronize(0));
+    checkCuda(cudaGetLastError());
+    // init tuples with (k*output_arity + dest->data_raw.data()) where k in
+    // range (0 ~ src->tuple_counts) using thrust
+    // thrust::counting_iterator<tuple_size_t> index_sequence_begin(0);
+    // thrust::counting_iterator<tuple_size_t>
+    // index_sequence_end(src->tuple_counts);
+    // thrust::transform(rmm::exec_policy(), index_sequence_begin,
+    // index_sequence_end,
+    //                   dest->tuples.begin(),
+    //                   acopy_init_unsort_func(dest->data_raw.data().get(),
+    //                   output_arity));
 }
