@@ -1,6 +1,5 @@
 ## Benchmarking result using MI250 (64GB) AMD GPU
 ```shell
-```shell
 # Benchmark SG
 # fe_body
 ./SG ../data/data_163734.txt
@@ -317,20 +316,146 @@ build index time:   0
 merge time:         0
 unique time:        0.487054
 
-
 # Benchmark Reachability
+# com-dblp
+./PLEN ../data/com-dblp.ungraph.txt
+Iteration 3 finish populating
+GPU 0 memory: free=19610468352, total=34342961152
+Join time: 3.54967 ; merge full time: 0.115742 ; memory alloc time: 0.00039824 ; rebuild delta time: 0.869942 ; set diff time: 0.164343
+path_3__1_2_3   1 join result size(non dedup) 947674321
+GPUassert: out of memory /home/ac.ashovon/gdlog/gdlog/src/join.hip 113
+GPUassert: invalid argument /home/ac.ashovon/gdlog/gdlog/src/join.hip 114
+Memory access fault by GPU node-3 (Agent handle: 0xf5d890) on address 0x36c1000. Reason: Page not present or supervisor privilege.
+[1]    107812 abort      ./PLEN ../data/com-dblp.ungraph.txt
+
+
+# fe_ocean
+./PLEN ../data/data_409593.txt
+iteration 59 relation path_3__1_2_3 finish dedup new tuples : 15077699 delta tuple size: 15077699 full counts 830398811
+Iteration 59 finish populating
+GPU 0 memory: free=6914310144, total=34342961152
+Join time: 14.5125 ; merge full time: 4.1851 ; memory alloc time: 0.0103362 ; rebuild delta time: 3.05356 ; set diff time: 5.57887
+path_3__1_2_3   1 join result size(non dedup) 41901279
+Iteration 60 popluating new tuple
+path_3__1_2_3
+GPUassert: out of memory /home/ac.ashovon/gdlog/gdlog/src/relation.hip 473
+Memory access fault by GPU node-3 (Agent handle: 0x1da4890) on address 0x1f000. Reason: Page not present or supervisor privilege.
+[1]    109275 abort      ./PLEN ../data/data_409593.txt
+
+
+# vsp_finan
+./PLEN ../data/vsp_finan512_scagr7-2c_rlfddd.mtx
+GPU 0 memory: free=6721372160, total=34342961152
+Join time: 55.538 ; merge full time: 19.3639 ; memory alloc time: 0.0823746 ; rebuild delta time: 2.37231 ; set diff time: 43.4235
+path_3__1_2_3   1 join result size(non dedup) 1512048
+Iteration 277 popluating new tuple
+path_3__1_2_3
+GPUassert: out of memory /home/ac.ashovon/gdlog/gdlog/src/relation.hip 473
+Memory access fault by GPU node-3 (Agent handle: 0x1deb890) on address 0x5e000. Reason: Page not present or supervisor privilege.
+[1]    108316 abort      ./PLEN ../data/vsp_finan512_scagr7-2c_rlfddd.mtx
+
+# p2p-Gnutella31
+./PLEN ../data/data_147892.txt
+Iteration 6 finish populating
+GPU 0 memory: free=17685282816, total=34342961152
+Join time: 3.42349 ; merge full time: 0.20545 ; memory alloc time: 0.0006392 ; rebuild delta time: 1.07349 ; set diff time: 0.31771
+path_3__1_2_3   1 join result size(non dedup) 569112417
+GPUassert: out of memory /home/ac.ashovon/gdlog/gdlog/src/relation.hip 559
+GPUassert: invalid argument /home/ac.ashovon/gdlog/gdlog/src/relation.hip 561
+Memory access fault by GPU node-3 (Agent handle: 0x1300890) on address 0x27000. Reason: Page not present or supervisor privilege.
+[1]    107946 abort      ./PLEN ../data/data_147892.txt
+
 # fe_body
 ./PLEN ../data/data_163734.txt
 Finished! path_3__1_2_3 has 156120489
-Join time: 8.43451 ; merge full time: 1.59695 ; rebuild full time: 0.108322 ; rebuild delta time: 0.834345 ; set diff time: 4.18308
-Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 0.868321
-PLEN time: 15.2892
-join detail:
-compute size time:  0.0448805
-reduce + scan time: 0.0273218
-fetch result time:  0.514161
-sort time:          1.47523
+Join time: 8.44274 ; merge full time: 1.57938 ; rebuild full time: 0.108152 ; rebuild delta time: 0.832899 ; set diff time: 4.17726
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 0.866479
+PLEN time: 15.276
+join detail: 
+compute size time:  0.0438669
+reduce + scan time: 0.0267134
+fetch result time:  0.513851
+sort time:          1.47645
 build index time:   0
 merge time:         0
-unique time:        0.128438
+unique time:        0.128398
+
+# SF.cedge
+./PLEN ../data/data_223001.txt
+Finished! path_3__1_2_3 has 80485066
+Join time: 5.0825 ; merge full time: 1.22238 ; rebuild full time: 0.0608996 ; rebuild delta time: 0.224552 ; set diff time: 3.41672
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 0.23078
+PLEN time: 10.133
+join detail: 
+compute size time:  0.0326515
+reduce + scan time: 0.0322976
+fetch result time:  0.185457
+sort time:          0.307386
+build index time:   0
+merge time:         0
+unique time:        0.0388818
+
+
+# Benchmark CSPA
+# httpd
+./CSPA ../data/dataset/httpd
+Finished! value_flow_2__1_2 has 1365306
+Finished! value_flow_2__2_1 has 1365306
+Finished! memory_alias_2__1_2 has 88905342
+Finished! memory_alias_2__2_1 has 88905342
+Finished! value_alias_2__1_2 has 234237608
+Join time: 7.57668 ; merge full time: 0.425961 ; rebuild full time: 0.233271 ; rebuild delta time: 0.975249 ; set diff time: 1.1691
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 1.12203
+analysis scc time: 15.2664
+analysis scc time (chono): 15266
+join detail: 
+compute size time:  0.30577
+reduce + scan time: 0.0622082
+fetch result time:  1.62456
+sort time:          3.71788
+build index time:   0
+merge time:         0.0723712
+unique time:        0.566881
+
+# linux
+./CSPA ../data/dataset/linux
+Finished! value_flow_2__1_2 has 5509641
+Finished! value_flow_2__2_1 has 5509641
+Finished! memory_alias_2__1_2 has 13777625
+Finished! memory_alias_2__2_1 has 13777625
+Finished! value_alias_2__1_2 has 30938106
+Join time: 1.44817 ; merge full time: 0.0692388 ; rebuild full time: 0.0444058 ; rebuild delta time: 0.193057 ; set diff time: 0.239547
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 0.217464
+analysis scc time: 3.31679
+analysis scc time (chono): 3316
+join detail: 
+compute size time:  0.0776974
+reduce + scan time: 0.0282187
+fetch result time:  0.500127
+sort time:          0.379403
+build index time:   0
+merge time:         0.0310624
+unique time:        0.0780284
+
+
+# postgresql
+./CSPA ../data/dataset/postgresql
+Finished! value_flow_2__1_2 has 3712452
+Finished! value_flow_2__2_1 has 3712452
+Finished! memory_alias_2__1_2 has 89475479
+Finished! memory_alias_2__2_1 has 89475479
+Finished! value_alias_2__1_2 has 223793861
+Join time: 6.14489 ; merge full time: 0.423239 ; rebuild full time: 0.236538 ; rebuild delta time: 0.958649 ; set diff time: 1.03355
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 1.10803
+analysis scc time: 14.551
+analysis scc time (chono): 14551
+join detail: 
+compute size time:  0.283483
+reduce + scan time: 0.0653045
+fetch result time:  1.10403
+sort time:          2.48954
+build index time:   0
+merge time:         0.0489407
+unique time:        0.349514
+
 ```
