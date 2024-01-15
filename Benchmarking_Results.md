@@ -119,18 +119,28 @@ Memory access fault by GPU node-3 (Agent handle: 0x10ab1a0) on address 0x2d000. 
 
 # fe_ocean
 ./PLEN ../data/data_409593.txt
+Iteration 246 finish populating
+GPU 0 memory: free=1386217472, total=68702699520
+Join time: 14.0213 ; merge full time: 24.1222 ; memory alloc time: 37.347 ; rebuild delta time: 0.324747 ; set diff time: 47.5378
 Start merge full
 GPUassert: out of memory /home/<USERNAME>/gdlog/gdlog/src/lie.hip 229
 GPUassert: invalid argument /home/<USERNAME>/gdlog/gdlog/src/lie.hip 230
-Memory access fault by GPU node-3 (Agent handle: 0xffe1a0) on address 0x3000. Reason: Unknown.
-[1]    194401 abort      ./PLEN ../data/data_409593.txt
+Memory access fault by GPU node-3 (Agent handle: 0x1ee3040) on address 0x18000. Reason: Write access to a read-only page.
+[1]    206366 abort      ./PLEN ../data/data_409593.txt
+
 
 # vsp_finan
 ./PLEN ../data/vsp_finan512_scagr7-2c_rlfddd.mtx
-num of sm 104
-using 18446744073709551615 as empty hash entry
-Input graph rows: 552020
-[1]    195380 segmentation fault  ./PLEN ../data/vsp_finan512_scagr7-2c_rlfddd.mtx
+iteration 519 relation path_3__1_2_3 no new tuple added
+Iteration 519 finish populating
+GPU 0 memory: free=31524388864, total=68702699520
+Join time: 6.90628 ; merge full time: 19.0522 ; memory alloc time: 1.77307 ; rebuild delta time: 0.266002 ; set diff time: 62.2861
+Start merge full
+GPUassert: out of memory /home/<USERNAME>/gdlog/gdlog/src/relation.hip 608
+GPUassert: invalid argument /home/<USERNAME>/gdlog/gdlog/src/relation.hip 609
+Memory access fault by GPU node-3 (Agent handle: 0x6f8040) on address 0x78000. Reason: Write access to a read-only page.
+[1]    204812 abort      ./PLEN ../data/vsp_finan512_scagr7-2c_rlfddd.mtx
+
 
 
 # p2p-Gnutella31
