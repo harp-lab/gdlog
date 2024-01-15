@@ -102,9 +102,101 @@ build index time:   0
 merge time:         0
 unique time:        0.2201
 
-
-
 # Benchmark Reachability
+# com-dblp
+./TC ../data/com-dblp.ungraph.txt
+Iteration 4 finish populating
+GPU 0 memory: free=36435918848, total=68702699520
+Join time: 5.88273 ; merge full time: 0.119825 ; memory alloc time: 0.000943039 ; rebuild delta time: 0.0835094 ; set diff time: 0.251644
+path_2__1_2   1 join result size(non dedup) 1310001323
+terminate called after throwing an instance of 'thrust::system::detail::bad_alloc'
+  what():  std::bad_alloc: hipErrorOutOfMemory: out of memory
+[1]    221212 abort      ./TC ../data/com-dblp.ungraph.txt
+
+# fe_ocean
+./TC ../data/data_409593.txt
+Finished! path_2__1_2 has 1669750513
+Join time: 9.90839 ; merge full time: 22.722 ; rebuild full time: 5.44e-06 ; rebuild delta time: 0.313808 ; set diff time: 45.6458
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 0.284021
+Path counts 1669750513
+TC time: 103.394
+join detail: 
+compute size time:  0.24311
+reduce + scan time: 0.0805864
+fetch result time:  0.813778
+sort time:          7.92126
+build index time:   0
+merge time:         0
+unique time:        0.69085
+
+# vsp_finan
+./TC ../data/vsp_finan512_scagr7-2c_rlfddd.mtx
+Finished! path_2__1_2 has 910070918
+Join time: 6.17123 ; merge full time: 17.0726 ; rebuild full time: 5.28e-06 ; rebuild delta time: 0.322227 ; set diff time: 61.571
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 0.288233
+Path counts 910070918
+TC time: 124.017
+join detail: 
+compute size time:  0.466385
+reduce + scan time: 0.0813026
+fetch result time:  1.15979
+sort time:          3.72519
+build index time:   0
+merge time:         0
+unique time:        0.314162
+
+# p2p-Gnutella31
+./TC ../data/data_147892.txt
+Finished! path_2__1_2 has 884179859
+Join time: 8.82392 ; merge full time: 0.810272 ; rebuild full time: 5.28e-06 ; rebuild delta time: 0.131447 ; set diff time: 2.61565
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 0.119929
+Path counts 884179859
+TC time: 12.6276
+join detail: 
+compute size time:  0.0948427
+reduce + scan time: 0.0322624
+fetch result time:  0.790514
+sort time:          6.95649
+build index time:   0
+merge time:         0
+unique time:        0.899702
+
+
+# fe_body
+./TC ../data/data_163734.txt
+Finished! path_2__1_2 has 156120489
+Join time: 1.15605 ; merge full time: 0.961298 ; rebuild full time: 5.12e-06 ; rebuild delta time: 0.0628483 ; set diff time: 2.92158
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 0.0528716
+Path counts 156120489
+TC time: 5.33049
+join detail: 
+compute size time:  0.0929474
+reduce + scan time: 0.0220802
+fetch result time:  0.13312
+sort time:          0.763173
+build index time:   0
+merge time:         0
+unique time:        0.0721067
+
+# SF.cedge
+./TC ../data/data_223001.txt
+Finished! path_2__1_2 has 80485066
+Join time: 0.52034 ; merge full time: 0.662366 ; rebuild full time: 5.28e-06 ; rebuild delta time: 0.073193 ; set diff time: 1.98085
+Rebuild relation detail time : rebuild rel sort time: 0 ; rebuild rel unique time: 0 ; rebuild rel index time: 0.0593458
+Path counts 80485066
+TC time: 3.31911
+join detail: 
+compute size time:  0.122997
+reduce + scan time: 0.0275458
+fetch result time:  0.0878357
+sort time:          0.168145
+build index time:   0
+merge time:         0
+unique time:        0.0248922
+
+
+
+# Benchmark PLEN
 # com-dblp
 ./PLEN ../data/com-dblp.ungraph.txt
 Iteration 4 finish populating
@@ -327,6 +419,27 @@ merge time:         0
 unique time:        0.487054
 
 # Benchmark Reachability
+# com-dblp
+./TC ../data/com-dblp.ungraph.txt
+
+# fe_ocean
+./TC ../data/data_409593.txt
+
+# vsp_finan
+./TC ../data/vsp_finan512_scagr7-2c_rlfddd.mtx
+
+# p2p-Gnutella31
+./TC ../data/data_147892.txt
+
+# fe_body
+./TC ../data/data_163734.txt
+
+# SF.cedge
+./TC ../data/data_223001.txt
+
+
+
+# Benchmark PLEN
 # com-dblp
 ./PLEN ../data/com-dblp.ungraph.txt
 Iteration 3 finish populating
