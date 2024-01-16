@@ -69,22 +69,22 @@ This will build the executables using the `hipcc` compiler.
 
 # Benchmark Reachability
 # com-dblp
-./PLEN ../data/com-dblp.ungraph.txt
+./TC ../data/com-dblp.ungraph.txt
 
 # fe_ocean
-./PLEN ../data/data_409593.txt
+./TC ../data/data_409593.txt
 
 # vsp_finan
-./PLEN ../data/vsp_finan512_scagr7-2c_rlfddd.mtx
+./TC ../data/vsp_finan512_scagr7-2c_rlfddd.mtx
 
 # p2p-Gnutella31
-./PLEN ../data/data_147892.txt
+./TC ../data/data_147892.txt
 
 # fe_body
-./PLEN ../data/data_163734.txt
+./TC ../data/data_163734.txt
 
 # SF.cedge
-./PLEN ../data/data_223001.txt
+./TC ../data/data_223001.txt
 ```
 ### Run instructions for JLSE
 - Run using Interactive node:
