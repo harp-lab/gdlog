@@ -11,12 +11,18 @@ RUN apt-get update && apt-get install -y kitware-archive-keyring
 RUN apt-get update && apt-get install -y cmake
 
 # use gcc-13 and g++-13 on ubuntu 22.04
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG USER=gdlog
+ARG PASS="gdlog"
+RUN useradd -m -s /bin/bash $USER && echo "$USER:$PASS" | chpasswd
+USER gdlog
 
-COPY . /gdlog
-RUN rm -rf /gdlog/build
 
-RUN cd /gdlog && cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -Bbuild . && cd build && make -j
+COPY --chown=gdlog:gdlog . /opt/gdlog
+WORKDIR /opt/gdlog
 
-WORKDIR /gdlog/build
+RUN cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -Bbuild . && cd build && make -j
+RUN chmod -R 757 /opt/gdlog
 
-ENTRYPOINT [ "/usr/bin/bash" ]
+
+# ENTRYPOINT [ "/usr/bin/bash" ]

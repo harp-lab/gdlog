@@ -161,9 +161,10 @@ inline auto make_cuda() { return std::make_shared<rmm::mr::cuda_memory_resource>
 int main(int argc, char *argv[]) {
     int device_id;
     int number_of_sm;
-    cudaGetDevice(&device_id);
-    cudaDeviceGetAttribute(&number_of_sm, cudaDevAttrMultiProcessorCount,
-                           device_id);
+    checkCuda(cudaSetDevice(0));
+    checkCuda(cudaGetDevice(&device_id));
+    checkCuda(cudaDeviceGetAttribute(&number_of_sm, cudaDevAttrMultiProcessorCount,
+                           device_id));
     std::cout << "num of sm " << number_of_sm << std::endl;
     std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
               << std::endl;

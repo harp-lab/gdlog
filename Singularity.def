@@ -3,19 +3,41 @@ From: nvidia/cuda:12.3.1-devel-ubuntu22.04
 Stage: spython-base
 
 %files
-. /gdlog
+. /opt/gdlog
 %post
 
-apt-get update && apt-get install -y build-essential git cmake wget curl vim
+DEBIAN_FRONTEND=noninteractive
+TZ=America/New_York
+apt-get update && apt-get install -y build-essential git wget curl vim software-properties-common lsb-release
 
-rm -rf /gdlog/build
-cd /gdlog && cmake -Bbuild . && cd build && make -j8
+apt-get install -y ca-certificates gpg wget
+test -f /usr/share/doc/kitware-archive-keyring/copyright || wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null
+apt-get update && apt-get install -y kitware-archive-keyring
+apt-get update && apt-get install -y cmake
 
-mkdir -p /gdlog/build/bin
-cd /gdlog/build/bin
+# use gcc-13 and g++-13 on ubuntu 22.04
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+su - =gdlog # USER=gdlog
+PASS="gdlog"
+useradd -m -s /bin/bash $USER && echo "$USER:$PASS" | chpasswd
+su -  gdlog # USER gdlog
+
+
+mkdir -p /opt/gdlog
+cd /opt/gdlog
+
+cmake -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -Bbuild . && cd build && make -j
+chmod -R 757 /opt/gdlog
+
+
+# ENTRYPOINT [ "/usr/bin/bash" ]
+%environment
+export DEBIAN_FRONTEND=noninteractive
+export TZ=America/New_York
 %runscript
-cd /gdlog/build/bin
+cd /opt/gdlog
 exec /bin/bash "$@"
 %startscript
-cd /gdlog/build/bin
+cd /opt/gdlog
 exec /bin/bash "$@"
