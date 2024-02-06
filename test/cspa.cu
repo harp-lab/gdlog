@@ -6,7 +6,12 @@
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
 #include <thrust/set_operations.h>
+#include <thrust/for_each.h>
 #include <vector>
+
+#include <rmm/mr/device/cuda_memory_resource.hpp>
+#include <rmm/mr/device/per_device_resource.hpp>
+#include <rmm/mr/device/pool_memory_resource.hpp>
 
 #include "../include/exception.cuh"
 #include "../include/lie.cuh"
@@ -251,7 +256,7 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
                   block_size, true);
 
     LIE analysis_scc(grid_size, block_size);
-
+    analysis_scc.reload_full_flag = false;
     analysis_scc.add_relations(assign_2__2_1, true);
     analysis_scc.add_relations(dereference_2__1_2, true);
     analysis_scc.add_relations(dereference_2__2_1, true);
@@ -376,6 +381,8 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
     std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
     std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
+    // print_tuple_rows(value_flow_2__1_2->full, "value_flow_2__1_2");
+
 }
 
 int main(int argc, char *argv[]) {
@@ -393,6 +400,10 @@ int main(int argc, char *argv[]) {
     block_size = 512;
     grid_size = 32 * number_of_sm;
     std::locale loc("");
+    rmm::mr::cuda_memory_resource cuda_mr{};
+    rmm::mr::pool_memory_resource<rmm::mr::cuda_memory_resource> mr{&cuda_mr};
+
+    rmm::mr::set_current_device_resource(&mr);
     analysis_bench(argv[1], block_size, grid_size);
     return 0;
 }

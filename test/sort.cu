@@ -6,16 +6,19 @@
 #include <stdlib.h>
 #include <thrust/execution_policy.h>
 #include <thrust/merge.h>
+#include <thrust/remove.h>
 #include <thrust/set_operations.h>
 #include <thrust/sort.h>
 #include <vector>
 
-#include "../include/relation.cuh"
-#include "../include/timer.cuh"
-#include "../include/relational_algebra.cuh"
 #include "../include/print.cuh"
+#include "../include/relation.cuh"
+#include "../include/relational_algebra.cuh"
+#include "../include/timer.cuh"
+#include "../include/exception.cuh"
 
 #define EMPTY_HASH_ENTRY ULLONG_MAX
+#define REPEAT 10
 
 using u64 = unsigned long long;
 using u32 = unsigned long;
@@ -33,7 +36,6 @@ typedef bool (*tuple_predicate)(tuple_type);
 //     __host__ __device__
 //     void operator()(tuple_type inner, tuple_type outer, tuple_type newt) {};
 // };
-
 
 // 32 bit version of fnv1-a
 __host__ __device__ inline u32 prefix_hash_32(tuple_type start_ptr,
@@ -169,7 +171,8 @@ __global__ void radix_sort_kernel(u32 *data, int *temp, int *histogram,
 void radix_sort(column_type *data, int arity, int num_elements) {
     // Allocate memory for the temp array and histogram
     int max_threads_per_block;
-    cudaDeviceGetAttribute(&max_threads_per_block, cudaDevAttrMaxThreadsPerBlock, 0);
+    cudaDeviceGetAttribute(&max_threads_per_block,
+                           cudaDevAttrMaxThreadsPerBlock, 0);
     int *temp, *histogram;
     cudaMalloc(&temp, num_elements * sizeof(int));
     cudaMalloc(&histogram, BINS_PER_PASS * THREADS_PER_BLOCK * sizeof(int));
@@ -183,7 +186,7 @@ void radix_sort(column_type *data, int arity, int num_elements) {
         // Launch the radix sort kernel
         radix_sort_kernel<<<(num_elements + THREADS_PER_BLOCK - 1) /
                                 THREADS_PER_BLOCK,
-                            THREADS_PER_BLOCK>>>(data+arity, temp, histogram,
+                            THREADS_PER_BLOCK>>>(data + arity, temp, histogram,
                                                  num_elements, pass);
 
         // Clear the histogram for the next pass
@@ -200,7 +203,10 @@ struct t_equal_n {
     u64 arity;
     tuple_type rhs;
 
-    t_equal_n(tuple_size_t arity, tuple_type target) { this->arity = arity; this->rhs = target; }
+    t_equal_n(tuple_size_t arity, tuple_type target) {
+        this->arity = arity;
+        this->rhs = target;
+    }
 
     __host__ __device__ bool operator()(tuple_type lhs) {
         for (int i = 0; i < arity; i++) {
@@ -227,10 +233,13 @@ int main(int argc, char *argv[]) {
     cudaDeviceGetAttribute(&number_of_sm, cudaDevAttrMultiProcessorCount,
                            device_id);
     int max_threads_per_block;
-    cudaDeviceGetAttribute(&max_threads_per_block, cudaDevAttrMaxThreadsPerBlock, 0);
-    std::cout << "num of sm " << number_of_sm << " num of thread per block " << max_threads_per_block << std::endl;
+    cudaDeviceGetAttribute(&max_threads_per_block,
+                           cudaDevAttrMaxThreadsPerBlock, 0);
+    std::cout << "num of sm " << number_of_sm << " num of thread per block "
+              << max_threads_per_block << std::endl;
     std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
-              << std::endl;;
+              << std::endl;
+    ;
     int block_size, grid_size;
     block_size = 512;
     grid_size = 32 * number_of_sm;
@@ -256,187 +265,6 @@ int main(int argc, char *argv[]) {
         raw_reverse_graph_data[i * 2] = raw_graph_data[i * 2 + 1];
     }
     std::cout << "finish reverse graph." << std::endl;
-
-    // copy the graph to device
-    column_type *d_graph_data;
-    cudaMalloc((void **)&d_graph_data,
-               graph_edge_counts * relation_columns * sizeof(column_type));
-    cudaMemcpy(d_graph_data, raw_graph_data,
-               graph_edge_counts * relation_columns * sizeof(column_type),
-               cudaMemcpyHostToDevice);
-
-    int REPEAT = 1;
-    // init the tuples
-    tuple_type *tuples;
-    cudaMalloc(&tuples, graph_edge_counts * sizeof(tuple_type));
-    time_point_begin = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < REPEAT; i++) {
-        init_tuples_unsorted<<<grid_size, block_size>>>(
-            tuples, d_graph_data, relation_columns, graph_edge_counts);
-    }
-    cudaDeviceSynchronize();
-    time_point_end = std::chrono::high_resolution_clock::now();
-    spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
-                     time_point_end - time_point_begin)
-                     .count();
-    std::cout << "init tuples time: " << spent_time << std::endl;
-    column_type *tuple_hashvs;
-    cudaMalloc((void **)&tuple_hashvs, graph_edge_counts * sizeof(column_type));
-    column_type *col_tmp;
-    cudaMalloc((void **)&col_tmp, graph_edge_counts * sizeof(column_type));
-
-    time_point_end = std::chrono::high_resolution_clock::now();
-    // compute hash for tuples
-    for (int i = 0; i < REPEAT; i++) {
-        compute_hash<<<grid_size, block_size>>>(tuples, graph_edge_counts, 1,
-                                                tuple_hashvs);
-        cudaDeviceSynchronize();
-    }
-    time_point_end = std::chrono::high_resolution_clock::now();
-    spent_time = std::chrono::duration_cast<std::chrono::duration<double>>(
-                     time_point_end - time_point_begin)
-                     .count();
-    std::cout << "compute hash time: " << spent_time << std::endl;
-
-    // sort the tuples using thrust
-    double sort_hash_time = 0;
-    for (int i = 0; i < REPEAT; i++) {
-        time_point_begin = std::chrono::high_resolution_clock::now();
-
-        extract_column<<<grid_size, block_size>>>(tuples, graph_edge_counts, 1,
-                                                  col_tmp);
-        cudaDeviceSynchronize();
-        thrust::stable_sort_by_key(thrust::device, col_tmp,
-                                   col_tmp + graph_edge_counts, tuples);
-        cudaDeviceSynchronize();
-        extract_column<<<grid_size, block_size>>>(tuples, graph_edge_counts, 0,
-                                                  col_tmp);
-        cudaDeviceSynchronize();
-        thrust::stable_sort_by_key(thrust::device, col_tmp,
-                                   col_tmp + graph_edge_counts, tuples);
-        compute_hash<<<grid_size, block_size>>>(tuples, graph_edge_counts, 1,
-                                                tuple_hashvs);
-        cudaDeviceSynchronize();
-        thrust::stable_sort_by_key(thrust::device, tuple_hashvs,
-                                   tuple_hashvs + graph_edge_counts, tuples);
-        cudaDeviceSynchronize();
-        time_point_end = std::chrono::high_resolution_clock::now();
-        sort_hash_time +=
-            std::chrono::duration_cast<std::chrono::duration<double>>(
-                time_point_end - time_point_begin)
-                .count();
-        // print_tuple_list(tuples, graph_edge_counts, 2);
-        // recover prepare for next sort
-        init_tuples_unsorted<<<grid_size, block_size>>>(
-            tuples, d_graph_data, relation_columns, graph_edge_counts);
-    }
-    std::cout << "sort hash time: " << sort_hash_time << std::endl;
-
-    // sort the tuples using thrust with tuple_indexed_less
-    double sort_comp_time = 0;
-    for (int i = 0; i < REPEAT; i++) {
-        time_point_begin = std::chrono::high_resolution_clock::now();
-        thrust::sort(thrust::device, tuples, tuples + graph_edge_counts,
-                     tuple_indexed_less(1, 2));
-        cudaDeviceSynchronize();
-        time_point_end = std::chrono::high_resolution_clock::now();
-        sort_comp_time +=
-            std::chrono::duration_cast<std::chrono::duration<double>>(
-                time_point_end - time_point_begin)
-                .count();
-        // print_tuple_list(tuples, graph_edge_counts, 2);
-        init_tuples_unsorted<<<grid_size, block_size>>>(
-            tuples, d_graph_data, relation_columns, graph_edge_counts);
-    }
-    std::cout << "sort using tuple_indexed_less time: " << sort_comp_time
-              << std::endl;
-
-
-    // load raw data into edge relation
-    time_point_begin = std::chrono::high_resolution_clock::now();
-    Relation *edge_2__2_1 = new Relation();
-    // cudaMallocHost((void **)&edge_2__2_1, sizeof(Relation));
-    Relation *path_2__1_2 = new Relation();
-    path_2__1_2->index_flag = false;
-    // cudaMallocHost((void **)&path_2__1_2, sizeof(Relation));
-    std::cout << "edge size " << graph_edge_counts << std::endl;
-    load_relation(path_2__1_2, "path_2__1_2", 2, raw_graph_data,
-                  graph_edge_counts, 1, 0, grid_size, block_size);
-    load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
-                  graph_edge_counts, 1, 0, grid_size, block_size);
-    time_point_end = std::chrono::high_resolution_clock::now();
-    // double kernel_spent_time = timer.get_spent_time();
-    double init_relation_time =
-        std::chrono::duration_cast<std::chrono::duration<double>>(
-            time_point_end - time_point_begin)
-            .count();
-    std::cout << "Build hash table time: " << init_relation_time << std::endl;
-
-    tuple_generator_hook reorder_path_host;
-    cudaMemcpyFromSymbol(&reorder_path_host, reorder_path_device,
-                         sizeof(tuple_generator_hook));
-    float join_detail[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
-    RelationalJoin join_test(edge_2__2_1, FULL, path_2__1_2, FULL, path_2__1_2,
-                             reorder_path_host, nullptr, LEFT, grid_size,
-                             block_size, join_detail);
-    time_point_begin = std::chrono::high_resolution_clock::now();
-    join_test();
-    time_point_end = std::chrono::high_resolution_clock::now();
-    double join_test_time =
-        std::chrono::duration_cast<std::chrono::duration<double>>(
-            time_point_end - time_point_begin)
-            .count();
-    std::cout << "join test time: " << join_test_time << std::endl;
-    std::cout << "join detail: " << std::endl;
-    std::cout << "compute size time:  " <<  join_detail[0] <<  std::endl;
-    std::cout << "reduce + scan time: " <<  join_detail[1] <<  std::endl;
-    std::cout << "fetch result time:  " <<  join_detail[2] <<  std::endl;
-    std::cout << "sort time:          " <<  join_detail[3] <<  std::endl;
-    std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
-    std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
-    std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
-    // test thrust set_difference time on path's newt and full
-    tuple_type* deduped_tuples;
-    cudaMalloc(&deduped_tuples, path_2__1_2->newt->tuple_counts * sizeof(tuple_type));
-
-    time_point_begin = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < 10; i++) {
-    thrust::set_difference(thrust::device, path_2__1_2->newt->tuples,
-                           path_2__1_2->newt->tuples + path_2__1_2->newt->tuple_counts,
-                           path_2__1_2->full->tuples, path_2__1_2->full->tuples + path_2__1_2->full->tuple_counts,
-                           deduped_tuples, tuple_indexed_less(1, 2));
-    cudaDeviceSynchronize();
-    }
-    time_point_end = std::chrono::high_resolution_clock::now();
-    double set_difference_time =
-        std::chrono::duration_cast<std::chrono::duration<double>>(
-            time_point_end - time_point_begin)
-            .count();
-    std::cout << "set_difference time: " << set_difference_time << std::endl;
-
-    // sequential set_difference
-    tuple_type* deduped_tuples_seq;
-    cudaMalloc(&deduped_tuples_seq, path_2__1_2->newt->tuple_counts * sizeof(tuple_type));
-    time_point_begin = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < 10; i++) {
-        tuple_type* full_t_end = path_2__1_2->full->tuples + path_2__1_2->full->tuple_counts;
-        for (auto i = 0; i < path_2__1_2->newt->tuple_counts ; i++) {
-            auto cur_newt_tuple = path_2__1_2->newt->tuples[i];
-            
-            auto res =thrust::find_if(thrust::device, path_2__1_2->full->tuples, path_2__1_2->full->tuples + path_2__1_2->full->tuple_counts,
-                            t_equal_n(path_2__1_2->arity, cur_newt_tuple));
-            cudaDeviceSynchronize();
-            if (res != full_t_end) {
-                deduped_tuples_seq[i] = cur_newt_tuple;
-            }
-        }
-    }
-    time_point_end = std::chrono::high_resolution_clock::now();
-    double set_difference_time_seq =
-        std::chrono::duration_cast<std::chrono::duration<double>>(
-            time_point_end - time_point_begin)
-            .count();
-    std::cout << "set_difference time seq: " << set_difference_time_seq << std::endl;
-
+    
     return 0;
 }
