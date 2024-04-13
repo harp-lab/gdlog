@@ -77,7 +77,7 @@ __device__ void cp_1(tuple_type src, tuple_type dest) {
 }
 __device__ tuple_copy_hook cp_1_device = cp_1;
 
-void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
+void analysis_bench(const char *dataset_path, int block_size, int grid_size, bool fully_disable_buffer = false) {
     KernelTimer timer;
     int relation_columns = 2;
     std::chrono::high_resolution_clock::time_point time_point_begin;
@@ -94,17 +94,19 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     column_type *raw_reverse_graph_data =
         (column_type *)malloc(graph_edge_counts * 2 * sizeof(column_type));
 
-    std::cout << "reversing graph ... " << std::endl;
+    // std::cout << "reversing graph ... " << std::endl;
     for (tuple_size_t i = 0; i < graph_edge_counts; i++) {
         raw_reverse_graph_data[i * 2 + 1] = raw_graph_data[i * 2];
         raw_reverse_graph_data[i * 2] = raw_graph_data[i * 2 + 1];
     }
-    std::cout << "finish reverse graph." << std::endl;
+    // std::cout << "finish reverse graph." << std::endl;
 
     timer.start_timer();
     Relation *edge_2__2_1 = new Relation();
+    edge_2__2_1->fully_disable_merge_buffer_flag = fully_disable_buffer;
     // cudaMallocHost((void **)&edge_2__2_1, sizeof(Relation));
     Relation *path_2__1_2 = new Relation();
+    path_2__1_2->fully_disable_merge_buffer_flag = fully_disable_buffer;
     path_2__1_2->index_flag = false;
     // cudaMallocHost((void **)&path_2__1_2, sizeof(Relation));
     std::cout << "edge size " << graph_edge_counts << std::endl;
@@ -113,9 +115,9 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     load_relation(edge_2__2_1, "edge_2__2_1", 2, raw_reverse_graph_data,
                   graph_edge_counts, 1, 0, grid_size, block_size);
     timer.stop_timer();
-    // double kernel_spent_time = timer.get_spent_time();
-    std::cout << "Build hash table time: " << timer.get_spent_time()
-              << std::endl;
+    // // double kernel_spent_time = timer.get_spent_time();
+    // std::cout << "Build hash table time: " << timer.get_spent_time()
+    //           << std::endl;
 
     timer.start_timer();
     LIE tc_scc(grid_size, block_size);
@@ -138,14 +140,14 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     std::cout << "Path counts " << path_2__1_2->full->tuple_counts << std::endl;
     // print_tuple_rows(path_2__2_1->full, "full");
     std::cout << "TC time: " << timer.get_spent_time() << std::endl;
-    std::cout << "join detail: " << std::endl;
-    std::cout << "compute size time:  " <<  join_detail[0] <<  std::endl;
-    std::cout << "reduce + scan time: " <<  join_detail[1] <<  std::endl;
-    std::cout << "fetch result time:  " <<  join_detail[2] <<  std::endl;
-    std::cout << "sort time:          " <<  join_detail[3] <<  std::endl;
-    std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
-    std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
-    std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
+    // std::cout << "join detail: " << std::endl;
+    // std::cout << "compute size time:  " <<  join_detail[0] <<  std::endl;
+    // std::cout << "reduce + scan time: " <<  join_detail[1] <<  std::endl;
+    // std::cout << "fetch result time:  " <<  join_detail[2] <<  std::endl;
+    // std::cout << "sort time:          " <<  join_detail[3] <<  std::endl;
+    // std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
+    // std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
+    // std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
 }
 
 void analysis_bench2(const char *dataset_path, int block_size, int grid_size) {
@@ -165,27 +167,27 @@ void analysis_bench2(const char *dataset_path, int block_size, int grid_size) {
     column_type *raw_reverse_graph_data =
         (column_type *)malloc(graph_edge_counts * 2 * sizeof(column_type));
 
-    std::cout << "reversing graph ... " << std::endl;
+    // std::cout << "reversing graph ... " << std::endl;
     for (tuple_size_t i = 0; i < graph_edge_counts; i++) {
         raw_reverse_graph_data[i * 2 + 1] = raw_graph_data[i * 2];
         raw_reverse_graph_data[i * 2] = raw_graph_data[i * 2 + 1];
     }
-    std::cout << "finish reverse graph." << std::endl;
+    // std::cout << "finish reverse graph." << std::endl;
 
     timer.start_timer();
     Relation *path_2__1_2 = new Relation();
     // cudaMallocHost((void **)&path_2__1_2, sizeof(Relation));
     Relation *path_2__2_1 = new Relation();
     // cudaMallocHost((void **)&path_2__2_1, sizeof(Relation));
-    std::cout << "edge size " << graph_edge_counts << std::endl;
+    // std::cout << "edge size " << graph_edge_counts << std::endl;
     load_relation(path_2__1_2, "path_2__1_2", 2, raw_graph_data,
                   graph_edge_counts, 1, 0, grid_size, block_size);
     load_relation(path_2__2_1, "path_2__2_1", 2, nullptr, 0, 1, 0, grid_size,
                   block_size);
     timer.stop_timer();
     // double kernel_spent_time = timer.get_spent_time();
-    std::cout << "Build hash table time: " << timer.get_spent_time()
-              << std::endl;
+    // std::cout << "Build hash table time: " << timer.get_spent_time()
+    //           << std::endl;
 
     timer.start_timer();
     LIE tc_scc(grid_size, block_size);
@@ -217,14 +219,17 @@ int main(int argc, char *argv[]) {
     cudaGetDevice(&device_id);
     cudaDeviceGetAttribute(&number_of_sm, cudaDevAttrMultiProcessorCount,
                            device_id);
-    std::cout << "num of sm " << number_of_sm << std::endl;
-    std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
-              << std::endl;
+    // std::cout << "num of sm " << number_of_sm << std::endl;
+    // std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
+    //           << std::endl;
     int block_size, grid_size;
     block_size = 512;
     grid_size = 32 * number_of_sm;
     std::locale loc("");
+    if (strcmp(argv[2], "1") == 0)
+        analysis_bench(argv[1], block_size, grid_size, true);
+    else
+        analysis_bench(argv[1], block_size, grid_size, false);
 
-    analysis_bench(argv[1], block_size, grid_size);
     return 0;
 }

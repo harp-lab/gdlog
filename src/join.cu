@@ -87,9 +87,9 @@ void RelationalJoin::operator()() {
         // checkCuda(cudaDeviceSynchronize());
     }
     
-    std::cout << output_rel->name << "   " << outer->index_column_size
-              << " join result size(non dedup) " << total_result_rows
-              << std::endl;
+    // std::cout << output_rel->name << "   " << outer->index_column_size
+    //           << " join result size(non dedup) " << total_result_rows
+    //           << std::endl;
     // print_memory_usage();
     tuple_size_t *result_counts_offset;
     checkCuda(cudaMalloc((void **)&result_counts_offset,

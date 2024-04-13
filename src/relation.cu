@@ -419,7 +419,7 @@ void Relation::flush_delta(int grid_size, int block_size, float *detail_time) {
     int multiplier = FULL_BUFFER_VEC_MULTIPLIER;
     if (!pre_allocated_merge_buffer_flag && !fully_disable_merge_buffer_flag &&
         delta_mem_size * multiplier <= 0.1 * free_mem) {
-        std::cout << "reenable pre-allocated merge buffer" << std::endl;
+        // std::cout << "reenable pre-allocated merge buffer" << std::endl;
         pre_allocated_merge_buffer_flag = true;
     }
 
@@ -429,7 +429,7 @@ void Relation::flush_delta(int grid_size, int block_size, float *detail_time) {
                 checkCuda(cudaFree(tuple_merge_buffer));
                 tuple_merge_buffer = nullptr;
             }
-            std::cout << "extend mem" << std::endl;
+            // std::cout << "extend mem" << std::endl;
             extened_mem = true;
             tuple_merge_buffer_size =
                 current_full_size + (delta->tuple_counts * multiplier);
@@ -439,15 +439,15 @@ void Relation::flush_delta(int grid_size, int block_size, float *detail_time) {
             while (((free_mem - tuple_full_buf_mem_size) * 1.0 /
                     total_mem_size) < 0.4 &&
                    delta_mem_size * multiplier > 0.1 * free_mem) {
-                std::cout << "multiplier : " << multiplier << std::endl;
+                // std::cout << "multiplier : " << multiplier << std::endl;
                 multiplier--;
                 tuple_merge_buffer_size =
                     current_full_size + (delta->tuple_counts * multiplier);
                 tuple_full_buf_mem_size =
                     tuple_merge_buffer_size * sizeof(tuple_type);
                 if (multiplier == 2) {
-                    std::cout << "not enough memory for merge buffer"
-                              << std::endl;
+                    // std::cout << "not enough memory for merge buffer"
+                    //           << std::endl;
                     // not enough space for pre-allocated buffer
                     pre_allocated_merge_buffer_flag = false;
                     tuple_merge_buffer_size = 0;
