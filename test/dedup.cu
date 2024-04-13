@@ -117,8 +117,8 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
                   graph_edge_counts, 1, 0, grid_size, block_size);
     timer.stop_timer();
     // double kernel_spent_time = timer.get_spent_time();
-    std::cout << "Build hash table time: " << timer.get_spent_time()
-              << std::endl;
+    // std::cout << "Build hash table time: " << timer.get_spent_time()
+    //           << std::endl;
 
     timer.start_timer();
     LIE tc_scc(grid_size, block_size);

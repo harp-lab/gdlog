@@ -33,8 +33,8 @@ void RelationalCopy::operator()() {
         src = src_rel->full;
     }
     GHashRelContainer *dest = dest_rel->newt;
-    std::cout << "Copy " << src_rel->name << " to " << dest_rel->name
-              << std::endl;
+    // std::cout << "Copy " << src_rel->name << " to " << dest_rel->name
+            //   << std::endl;
 
     if (src->tuple_counts == 0) {
         return;

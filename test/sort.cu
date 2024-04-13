@@ -235,11 +235,10 @@ int main(int argc, char *argv[]) {
     int max_threads_per_block;
     cudaDeviceGetAttribute(&max_threads_per_block,
                            cudaDevAttrMaxThreadsPerBlock, 0);
-    std::cout << "num of sm " << number_of_sm << " num of thread per block "
-              << max_threads_per_block << std::endl;
-    std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
-              << std::endl;
-    ;
+    // std::cout << "num of sm " << number_of_sm << " num of thread per block "
+    //           << max_threads_per_block << std::endl;
+    // std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
+    //           << std::endl;
     int block_size, grid_size;
     block_size = 512;
     grid_size = 32 * number_of_sm;

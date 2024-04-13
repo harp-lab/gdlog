@@ -13,7 +13,7 @@
 #define RADIX_SORT_THRESHOLD 0
 #endif
 #ifndef FULL_BUFFER_VEC_MULTIPLIER
-#define FULL_BUFFER_VEC_MULTIPLIER 4
+#define FULL_BUFFER_VEC_MULTIPLIER 8
 #endif
 
 enum RelationVersion { DELTA, FULL, NEWT };

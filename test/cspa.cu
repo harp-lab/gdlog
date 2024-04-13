@@ -117,10 +117,10 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     dereference_fact_ss << dataset_path << "/dereference.facts";
     // std::cout << assign_fact_ss.str() << std::endl;
     tuple_size_t assign_counts = get_row_size(assign_fact_ss.str().c_str());
-    std::cout << "Input assign rows: " << assign_counts << std::endl;
+    // std::cout << "Input assign rows: " << assign_counts << std::endl;
     column_type *raw_assign_data = get_relation_from_file(
         assign_fact_ss.str().c_str(), assign_counts, 2, '\t', U32);
-    std::cout << "reversing assign ... " << std::endl;
+    // std::cout << "reversing assign ... " << std::endl;
     column_type *raw_reverse_assign_data =
         (column_type *)malloc(assign_counts * 2 * sizeof(column_type));
     for (tuple_size_t i = 0; i < assign_counts; i++) {
@@ -130,10 +130,10 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
 
     tuple_size_t dereference_counts =
         get_row_size(dereference_fact_ss.str().c_str());
-    std::cout << "Input dereference rows: " << dereference_counts << std::endl;
+    // std::cout << "Input dereference rows: " << dereference_counts << std::endl;
     column_type *raw_dereference_data = get_relation_from_file(
         dereference_fact_ss.str().c_str(), dereference_counts, 2, '\t', U32);
-    std::cout << "reversing dereference ... " << std::endl;
+    // std::cout << "reversing dereference ... " << std::endl;
     column_type *raw_reverse_dereference_data =
         (column_type *)malloc(dereference_counts * 2 * sizeof(column_type));
     for (tuple_size_t i = 0; i < dereference_counts; i++) {
@@ -156,8 +156,8 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
                   raw_reverse_dereference_data, dereference_counts, 1, 0,
                   grid_size, block_size);
     timer.stop_timer();
-    std::cout << "Build hash table time: " << timer.get_spent_time()
-              << std::endl;
+    // std::cout << "Build hash table time: " << timer.get_spent_time()
+    //           << std::endl;
 
     // scc init
     Relation *value_flow_2__1_2 = new Relation();
@@ -222,11 +222,11 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     timer.stop_timer();
     time_point_end = std::chrono::high_resolution_clock::now();
     std::cout << "init scc time: " << timer.get_spent_time() << std::endl;
-    std::cout << "init scc time (chono): "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(
-                     time_point_end - time_point_begin)
-                     .count()
-              << std::endl;
+    // std::cout << "init scc time (chono): "
+    //           << std::chrono::duration_cast<std::chrono::milliseconds>(
+    //                  time_point_end - time_point_begin)
+    //                  .count()
+    //           << std::endl;
 
     // scc analysis
     Relation *value_flow_forward_2__1_2 = new Relation();
@@ -368,19 +368,19 @@ void analysis_bench(const char *dataset_path, int block_size, int grid_size) {
     timer.stop_timer();
     time_point_end = std::chrono::high_resolution_clock::now();
     std::cout << "analysis scc time: " << timer.get_spent_time() << std::endl;
-    std::cout << "analysis scc time (chono): "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(
-                     time_point_end - time_point_begin)
-                     .count()
-              << std::endl;
-    std::cout << "join detail: " << std::endl;
-    std::cout << "compute size time:  " <<  join_detail[0] <<  std::endl;
-    std::cout << "reduce + scan time: " <<  join_detail[1] <<  std::endl;
-    std::cout << "fetch result time:  " <<  join_detail[2] <<  std::endl;
-    std::cout << "sort time:          " <<  join_detail[3] <<  std::endl;
-    std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
-    std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
-    std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
+    // std::cout << "analysis scc time (chono): "
+    //           << std::chrono::duration_cast<std::chrono::milliseconds>(
+    //                  time_point_end - time_point_begin)
+    //                  .count()
+    //           << std::endl;
+    // std::cout << "join detail: " << std::endl;
+    // std::cout << "compute size time:  " <<  join_detail[0] <<  std::endl;
+    // std::cout << "reduce + scan time: " <<  join_detail[1] <<  std::endl;
+    // std::cout << "fetch result time:  " <<  join_detail[2] <<  std::endl;
+    // std::cout << "sort time:          " <<  join_detail[3] <<  std::endl;
+    // std::cout << "build index time:   " <<  join_detail[5] <<  std::endl;
+    // std::cout << "merge time:         " <<  join_detail[6] <<  std::endl;
+    // std::cout << "unique time:        " << join_detail[4] + join_detail[7] <<  std::endl;
     // print_tuple_rows(value_flow_2__1_2->full, "value_flow_2__1_2");
 
 }
@@ -393,9 +393,9 @@ int main(int argc, char *argv[]) {
                            device_id);
     int max_threads_per_block;
     cudaDeviceGetAttribute(&max_threads_per_block, cudaDevAttrMaxThreadsPerBlock, 0);
-    std::cout << "num of sm " << number_of_sm << " num of thread per block " << max_threads_per_block << std::endl;
-    std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
-              << std::endl;
+    // std::cout << "num of sm " << number_of_sm << " num of thread per block " << max_threads_per_block << std::endl;
+    // std::cout << "using " << EMPTY_HASH_ENTRY << " as empty hash entry"
+    //           << std::endl;
     int block_size, grid_size;
     block_size = 512;
     grid_size = 32 * number_of_sm;

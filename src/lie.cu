@@ -52,7 +52,7 @@ void LIE::fixpoint_loop() {
     float rebuild_rel_unique_time = 0;
     float rebuild_rel_index_time = 0;
 
-    std::cout << "start lie .... " << std::endl;
+    // std::cout << "start lie .... " << std::endl;
     // init full tuple buffer for all relation involved
     for (Relation *rel : update_relations) {
         copy_relation_container(rel->delta, rel->full, grid_size, block_size);
@@ -97,12 +97,12 @@ void LIE::fixpoint_loop() {
             free_relation_container(rel->newt);
         }
 
-        std::cout << "Iteration " << iteration_counter
-                  << " popluating new tuple" << std::endl;
+        // std::cout << "Iteration " << iteration_counter
+        //           << " popluating new tuple" << std::endl;
         // merge delta into full
         bool fixpoint_flag = true;
         for (Relation *rel : update_relations) {
-            std::cout << rel->name << std::endl;
+            // std::cout << rel->name << std::endl;
             // print_tuple_rows(rel->full, "Path full before populate
             // >>>>>>>>>>>>>>>> ", false);
             // populate newt
@@ -155,8 +155,8 @@ void LIE::fixpoint_loop() {
             rel->delta = new GHashRelContainer(
                 rel->arity, rel->index_column_size, rel->dependent_column_size);
             if (rel->newt->tuple_counts == 0) {
-                std::cout << "iteration " << iteration_counter << " relation "
-                          << rel->name << " no new tuple added" << std::endl;
+                // std::cout << "iteration " << iteration_counter << " relation "
+                //           << rel->name << " no new tuple added" << std::endl;
                 continue;
             }
 
@@ -225,31 +225,38 @@ void LIE::fixpoint_loop() {
 
             // print_tuple_rows(rel->full, "Path full after merge
             // >>>>>>>>>>>>>>>>>>>");
-            std::cout << "iteration " << iteration_counter << " relation "
-                      << rel->name
-                      << " finish dedup new tuples : " << deduplicate_size
-                      << " delta tuple size: " << rel->delta->tuple_counts
-                      << " full counts " << rel->full->tuple_counts
-                      << std::endl;
+            // std::cout << "iteration " << iteration_counter << " relation "
+            //           << rel->name
+            //           << " finish dedup new tuples : " << deduplicate_size
+            //           << " delta tuple size: " << rel->delta->tuple_counts
+            //           << " full counts " << rel->full->tuple_counts
+            //           << std::endl;
         }
         checkCuda(cudaStreamSynchronize(0));
         // std::cout << "Iteration " << iteration_counter << " finish
         // populating"
         //           << std::endl;
-        print_memory_usage();
-        std::cout << "Join time: " << join_time
-                  << " ; sort newt time: " << sort_time
-                  << " ; unique newt time: " << unique_time
-                  << " ; merge full time: " << merge_time
-                  << " ; memory alloc time: " << memory_alloc_time
-                  << " ; rebuild delta time: " << rebuild_delta_time
-                  << " ; set diff time: " << set_diff_time << std::endl;
+        // print_memory_usage();
+        // std::cout << "Join time: " << join_time
+        //           << " ; sort newt time: " << sort_time
+        //           << " ; unique newt time: " << unique_time
+        //           << " ; merge full time: " << merge_time
+        //           << " ; memory alloc time: " << memory_alloc_time
+        //           << " ; rebuild delta time: " << rebuild_delta_time
+        //           << " ; set diff time: " << set_diff_time << std::endl;
         iteration_counter++;
         // if (iteration_counter >= 3) {
         //     break;
         // }
 
         if (fixpoint_flag || iteration_counter > max_iteration) {
+            // print_memory_usage();
+            // std::cout << "Iteration : " << iteration_counter 
+            //     << "Join time: " << join_time
+            //     << " ; merge full time: " << merge_time
+            //     << " ; memory alloc time: " << memory_alloc_time
+            //     << " ; rebuild delta time: " << rebuild_delta_time
+            //     << " ; set diff time: " << set_diff_time << std::endl;
             break;
         }
         // compute buffer/data_raw/tuples capcaity for each relation
@@ -337,24 +344,24 @@ void LIE::fixpoint_loop() {
 
         actual_size += actual_size_full + actual_size_delta + actual_size_newt +
                        actual_size_full_buf;
-        std::cout << "Total size >>>>>>>>>>>>>>>" << std::endl;
-        std::cout << "Iteration " << iteration_counter << " finish populating"
-                  << " total size: " << total_size
-                  << " full size: " << total_size_full
-                  << " delta size: " << total_size_delta
-                  << " newt size: " << total_size_newt
-                  << " full buf size: " << total_size_full_buf
-                //   << " delta size: " << total_size_delta_size
-                //   << " delta map size: " << total_size_delta_map_size
-                  << std::endl;
-        std::cout << "Actual size >>>>>>>>>>>>>>>" << std::endl;
-        std::cout << "Iteration " << iteration_counter << " finish populating"
-                  << " actual size: " << actual_size
-                  << " full size: " << actual_size_full
-                  << " delta size: " << actual_size_delta
-                  << " newt size: " << actual_size_newt
-                  << " full buf size: " << actual_size_full_buf
-                  << std::endl;
+        // std::cout << "Total size >>>>>>>>>>>>>>>" << std::endl;
+        // std::cout << "Iteration " << iteration_counter << " finish populating"
+        //           << " total size: " << total_size
+        //           << " full size: " << total_size_full
+        //           << " delta size: " << total_size_delta
+        //           << " newt size: " << total_size_newt
+        //           << " full buf size: " << total_size_full_buf
+        //         //   << " delta size: " << total_size_delta_size
+        //         //   << " delta map size: " << total_size_delta_map_size
+        //           << std::endl;
+        // std::cout << "Actual size >>>>>>>>>>>>>>>" << std::endl;
+        // std::cout << "Iteration " << iteration_counter << " finish populating"
+        //           << " actual size: " << actual_size
+        //           << " full size: " << actual_size_full
+        //           << " delta size: " << actual_size_delta
+        //           << " newt size: " << actual_size_newt
+        //           << " full buf size: " << actual_size_full_buf
+        //           << std::endl;
     }
 
     print_memory_usage();
@@ -368,15 +375,15 @@ void LIE::fixpoint_loop() {
     // merge full after reach fixpoint
     timer.start_timer();
     if (reload_full_flag) {
-        std::cout << "Start merge full" << std::endl;
+        // std::cout << "Start merge full" << std::endl;
         for (Relation *rel : update_relations) {
-            std::cout << "Start merge full for " << rel->name << std::endl;
+            // std::cout << "Start merge full for " << rel->name << std::endl;
             KernelTimer timer;
             // if (rel->current_full_size <= rel->full->tuple_counts) {
             //     continue;
             // }
-            std::cout << rel->name << " full size: " << rel->full->tuple_counts
-                      << "   " << rel->arity << std::endl;
+            // std::cout << rel->name << " full size: " << rel->full->tuple_counts
+                    //   << "   " << rel->arity << std::endl;
             timer.start_timer();
             rel->full->data_raw.resize(rel->full->tuple_counts * rel->arity);
             rel->tuple_merge_buffer.resize(0);
@@ -386,7 +393,7 @@ void LIE::fixpoint_loop() {
             flatten_tuples_raw_data_thrust(rel->full->tuples.data().get(),
                                            rel->full->data_raw.data().get(),
                                            rel->full->tuple_counts, rel->arity);
-            std::cout << "Finished flatten full" << std::endl;
+            // std::cout << "Finished flatten full" << std::endl;
             init_tuples_unsorted_thrust(rel->full->tuples.data().get(),
                                         rel->full->data_raw.data().get(),
                                         rel->arity, rel->full->tuple_counts);
@@ -397,8 +404,8 @@ void LIE::fixpoint_loop() {
             rel->full->update_index_map(grid_size, block_size);
             timer.stop_timer();
             rebuild_rel_index_time += timer.get_spent_time();
-            std::cout << "Finished! " << rel->name << " has "
-                      << rel->full->tuple_counts << std::endl;
+            // std::cout << "Finished! " << rel->name << " has "
+                    //   << rel->full->tuple_counts << std::endl;
             for (auto &delta_b : rel->buffered_delta_vectors) {
                 free_relation_container(delta_b);
             }
@@ -406,10 +413,10 @@ void LIE::fixpoint_loop() {
             free_relation_container(rel->newt);
         }
     } else {
-        for (Relation *rel : update_relations) {
-            std::cout << "Finished! " << rel->name << " has "
-                      << rel->full->tuple_counts << std::endl;
-        }
+        // for (Relation *rel : update_relations) {
+        //     std::cout << "Finished! " << rel->name << " has "
+        //               << rel->full->tuple_counts << std::endl;
+        // }
     }
     timer.stop_timer();
     float merge_full_time = timer.get_spent_time();

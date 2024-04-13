@@ -101,9 +101,9 @@ void RelationalJoin::compute_join(counting_buf_t &result_counts_buf,
     //                                    result_counts_buf.end(), 0);
 
     cudaDeviceSynchronize();
-    std::cout << output_rel->name << "   " << outer->index_column_size
-              << " join result size(non dedup) " << total_result_rows
-              << std::endl;
+    // std::cout << output_rel->name << "   " << outer->index_column_size
+    //           << " join result size(non dedup) " << total_result_rows
+    //           << std::endl;
     // print_memory_usage();
     result_offset_buf.resize(outer->tuple_counts);
     thrust::copy(rmm::exec_policy(), result_counts_buf.begin(),
