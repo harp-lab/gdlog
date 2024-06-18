@@ -110,7 +110,6 @@ void LIE::fixpoint_loop() {
                 rel->delta->tuples = nullptr;
             }
 
-            timer.start_timer();
             if (rel->newt->tuple_counts == 0) {
                 rel->delta =
                     new GHashRelContainer(rel->arity, rel->index_column_size,
@@ -127,6 +126,7 @@ void LIE::fixpoint_loop() {
             checkHip(hipMemset(deduplicated_newt_tuples, 0,
                                  deduplicated_newt_tuples_mem_size));
             //////
+            timer.start_timer();
 
             tuple_type *deuplicated_end = thrust::set_difference(
                 thrust::device, rel->newt->tuples,
