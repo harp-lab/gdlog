@@ -138,7 +138,7 @@ void LIE::fixpoint_loop() {
                                     rel->full->arity -
                                         rel->dependent_column_size));
                 deduplicate_size = deuplicated_end - deduplicated_newt_tuples;
-                if (deduplicate_size == 0) {
+                if (deduplicate_size != 0) {
                     fixpoint_flag = false;
                 }
             } else {
