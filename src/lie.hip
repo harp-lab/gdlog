@@ -127,20 +127,29 @@ void LIE::fixpoint_loop() {
                                  deduplicated_newt_tuples_mem_size));
             //////
             timer.start_timer();
-
-            tuple_type *deuplicated_end = thrust::set_difference(
-                thrust::device, rel->newt->tuples,
-                rel->newt->tuples + rel->newt->tuple_counts, rel->tuple_full,
-                rel->tuple_full + rel->current_full_size,
-                deduplicated_newt_tuples,
-                tuple_indexed_less(rel->full->index_column_size,
-                                   rel->full->arity -
-                                       rel->dependent_column_size));
+            tuple_size_t deduplicate_size = rel->newt->tuple_counts;
+            if (iteration_counter % 2 == 0) {
+                tuple_type *deuplicated_end = thrust::set_difference(
+                    thrust::device, rel->newt->tuples,
+                    rel->newt->tuples + rel->newt->tuple_counts, rel->tuple_full,
+                    rel->tuple_full + rel->current_full_size,
+                    deduplicated_newt_tuples,
+                    tuple_indexed_less(rel->full->index_column_size,
+                                    rel->full->arity -
+                                        rel->dependent_column_size));
+                deduplicate_size = deuplicated_end - deduplicated_newt_tuples;
+                if (deduplicate_size == 0) {
+                    fixpoint_flag = false;
+                }
+            } else {
+                // copy newt to deduplicated_newt_tuples
+                checkHip(hipMemcpy(deduplicated_newt_tuples, rel->newt->tuples,
+                                     deduplicated_newt_tuples_mem_size,
+                                     hipMemcpyDeviceToDevice));
+            }
             // checkHip(hipDeviceSynchronize());
-            tuple_size_t deduplicate_size =
-                deuplicated_end - deduplicated_newt_tuples;
 
-            if (deduplicate_size != 0) {
+            if (deduplicate_size != 0 && iteration_counter % 2 != 0) {
                 fixpoint_flag = false;
             }
             timer.stop_timer();
