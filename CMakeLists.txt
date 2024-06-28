@@ -1,54 +1,54 @@
-cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
-project(tc_gpu LANGUAGES CXX CUDA)
+cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
+project(tc_gpu LANGUAGES CXX HIP)
 
 set(gpu_ra_src "${PROJECT_SOURCE_DIR}/src")
 set(gpu_ra_include "${PROJECT_SOURCE_DIR}/include")
 set(test_dir "${PROJECT_SOURCE_DIR}/test")
 
 file(GLOB source_file_gpu_ra 
-    "${gpu_ra_include}/exception.cuh"
+    "${gpu_ra_include}/exception.h"
     "${gpu_ra_include}/dynamic_dispatch.h"
-    "${gpu_ra_include}/print.cuh"
-    "${gpu_ra_include}/relation.cuh"
-    "${gpu_ra_include}/relational_algebra.cuh"
-    "${gpu_ra_include}/timer.cuh"
-    "${gpu_ra_include}/tuple.cuh"
-    "${gpu_ra_include}/lie.cuh"
-    "${gpu_ra_src}/tuple.cu"
-    "${gpu_ra_src}/print.cu"
-    "${gpu_ra_src}/relation.cu"
-    "${gpu_ra_src}/lie.cu"
-    "${gpu_ra_src}/copy.cu"
-    "${gpu_ra_src}/acopy.cu"
-    "${gpu_ra_src}/join.cu"
+    "${gpu_ra_include}/print.h"
+    "${gpu_ra_include}/relation.h"
+    "${gpu_ra_include}/relational_algebra.h"
+    "${gpu_ra_include}/timer.h"
+    "${gpu_ra_include}/tuple.h"
+    "${gpu_ra_include}/lie.h"
+    "${gpu_ra_src}/tuple.hip"
+    "${gpu_ra_src}/print.hip"
+    "${gpu_ra_src}/relation.hip"
+    "${gpu_ra_src}/lie.hip"
+    "${gpu_ra_src}/copy.hip"
+    "${gpu_ra_src}/acopy.hip"
+    "${gpu_ra_src}/join.hip"
 )
 
 file(GLOB source_file_tc
-    "${test_dir}/tc.cu"
+    "${test_dir}/tc.hip"
 )
 
 file(GLOB source_path_lenght
-    "${test_dir}/path_length.cu"
+    "${test_dir}/path_length.hip"
 )
 
 file(GLOB source_cspa
-    "${test_dir}/cspa.cu"
+    "${test_dir}/cspa.hip"
 )
 
 file(GLOB source_file_datastructure
-    "${test_dir}/datastructure.cu"
+    "${test_dir}/datastructure.hip"
 )
 
 file(GLOB source_file_sg
-    "${test_dir}/sg.cu"
+    "${test_dir}/sg.hip"
 )
 
 file(GLOB source_file_test
-    "${test_dir}/sort.cu"
+    "${test_dir}/sort.hip"
 )
 
 file(GLOB source_file_merge
-    "${test_dir}/merge.cu"
+    "${test_dir}/merge.hip"
 )
 
 add_library(gpu_ra "${source_file_gpu_ra}")
